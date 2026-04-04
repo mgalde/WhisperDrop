@@ -2,11 +2,11 @@
 
 <p align="center">
   <img src="WhisperDrop.png" alt="WhisperDrop" width="720"/>
-</p>
 
 A simple desktop application that lets you drag and drop audio or video files and get text transcripts back — no command line required.
 
 WhisperDrop is a graphical front-end for [OpenAI Whisper](https://github.com/openai/whisper), a free and open-source speech recognition model that runs entirely on your own computer. Nothing is sent to the cloud.
+</p>
 
 ---
 
