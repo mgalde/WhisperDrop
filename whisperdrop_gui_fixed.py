@@ -17,13 +17,18 @@ Notes:
 """
 from __future__ import annotations
 
+import json
 import os
-import sys
+import platform
 import shlex
 import shutil
+import stat
 import subprocess
+import sys
+import tempfile
 import threading
 import time
+import urllib.request
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
@@ -236,6 +241,11 @@ class WhisperWorker(QtCore.QObject):
 
 
 class MainWindow(QMainWindow):
+    # Signals for background-thread → main-thread update communication
+    _sig_update_found = QtCore.Signal(str, str)   # new_version, download_url
+    _sig_update_none  = QtCore.Signal()
+    _sig_update_error = QtCore.Signal(str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
@@ -244,6 +254,12 @@ class MainWindow(QMainWindow):
         self.jobs: List[Job] = []
         self.thread: Optional[QtCore.QThread] = None
         self.worker: Optional[WhisperWorker] = None
+
+        # Update state
+        self._update_checked = False
+        self._sig_update_found.connect(self._on_update_found)
+        self._sig_update_none.connect(self._on_update_none)
+        self._sig_update_error.connect(self._on_update_error)
 
         # Run-time status heartbeat (helps when whisper is quiet/buffered)
         self._run_started_at: Optional[float] = None
@@ -375,6 +391,9 @@ class MainWindow(QMainWindow):
         # Disable output folder edit when "same folder" checked
         self.same_folder_chk.toggled.connect(self._sync_out_folder_enabled)
         self._sync_out_folder_enabled(self.same_folder_chk.isChecked())
+
+        # Auto-check for updates once, 3 seconds after startup (silent if up to date)
+        QtCore.QTimer.singleShot(3000, self._auto_check_update)
 
     def closeEvent(self, event: QtGui.QCloseEvent) -> None:
         self._save_settings()
@@ -616,84 +635,247 @@ class MainWindow(QMainWindow):
             "It runs transcription locally using your installed Whisper setup."
         )
 
-    def check_for_updates(self):
-        """
-        Two update approaches:
-        1) GitHub releases (recommended for a packaged build).
-        2) pip upgrade (if you installed WhisperDrop as a pip package).
-        """
-        if not GITHUB_REPO and not PIP_PACKAGE:
-            QMessageBox.information(
-                self, "Updates not configured",
-                "Update checks are not configured yet.\n\n"
-                "If you publish this app, set either:\n"
-                "  • GITHUB_REPO = \"youruser/yourrepo\" (GitHub Releases)\n"
-                "or\n"
-                "  • PIP_PACKAGE = \"your-package-name\" (pip upgrades)\n"
-                "in the source code.\n\n"
-                "For now, you can just pull the latest source and rerun."
-            )
+    # ---- Auto-check (once per run, silent if up to date) ----
+    def _auto_check_update(self):
+        if self._update_checked or not GITHUB_REPO:
             return
+        self._update_checked = True
+        threading.Thread(
+            target=self._fetch_release, args=(False,), daemon=True
+        ).start()
 
-        # Prefer GitHub Releases if configured
-        if GITHUB_REPO:
-            self._check_updates_github()
-        elif PIP_PACKAGE:
-            self._check_updates_pip()
+    # ---- Manual check (Help menu, always shows result) ----
+    def check_for_updates(self):
+        threading.Thread(
+            target=self._fetch_release, args=(True,), daemon=True
+        ).start()
 
-    def _check_updates_github(self):
-        import json
-        import urllib.request
-
-        api = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    # ---- Background fetch (runs in worker thread) ----
+    def _fetch_release(self, show_if_current: bool):
+        if not GITHUB_REPO:
+            return
         try:
-            req = urllib.request.Request(api, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"})
+            api = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+            req = urllib.request.Request(
+                api, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"}
+            )
             with urllib.request.urlopen(req, timeout=10) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="replace"))
 
             tag = (data.get("tag_name") or "").lstrip("v")
-            html_url = data.get("html_url") or f"https://github.com/{GITHUB_REPO}/releases"
             if not tag:
-                raise RuntimeError("No tag_name found in GitHub response.")
+                raise RuntimeError("No tag_name in GitHub response.")
 
             if self._is_newer(tag, APP_VERSION):
-                res = QMessageBox.question(
-                    self,
-                    "Update available",
-                    f"A newer version is available: {tag}\n\n"
-                    "Open the download page?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if res == QMessageBox.Yes:
-                    QDesktopServices.openUrl(QUrl(html_url))
-            else:
-                QMessageBox.information(self, "Up to date", f"You’re on the latest version ({APP_VERSION}).")
-        except Exception as e:
-            QMessageBox.warning(self, "Update check failed", f"Could not check updates.\n\n{e}")
+                url = self._pick_asset(data.get("assets", []))
+                if not url:
+                    # No direct binary — fall back to the release page
+                    url = data.get("html_url") or f"https://github.com/{GITHUB_REPO}/releases"
+                self._sig_update_found.emit(tag, url)
+            elif show_if_current:
+                self._sig_update_none.emit()
 
-    def _check_updates_pip(self):
-        # Minimal pip approach: attempt to upgrade in-app.
-        res = QMessageBox.question(
-            self,
-            "Update via pip",
-            "This will run pip to upgrade the app in the current Python environment.\n\n"
-            "Proceed?",
-            QMessageBox.Yes | QMessageBox.No
-        )
-        if res != QMessageBox.Yes:
-            return
-        try:
-            cmd = [sys.executable, "-m", "pip", "install", "-U", PIP_PACKAGE]
-            self._append_log(f"\n▶ Running: {' '.join(shlex.quote(c) for c in cmd)}\n")
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            out, _ = p.communicate()
-            self._append_log(out)
-            if p.returncode == 0:
-                QMessageBox.information(self, "Updated", "Update complete. Restart the app.")
-            else:
-                QMessageBox.warning(self, "Update failed", f"pip exited with code {p.returncode}. See log.")
         except Exception as e:
-            QMessageBox.warning(self, "Update failed", str(e))
+            if show_if_current:
+                self._sig_update_error.emit(str(e))
+            # If it was a silent background check, swallow the error quietly.
+
+    def _pick_asset(self, assets: list) -> str:
+        """Return the browser_download_url for the right binary on this platform."""
+        system = platform.system().lower()
+        for asset in assets:
+            name = asset.get("name", "").lower()
+            url  = asset.get("browser_download_url", "")
+            if system == "linux"   and not name.endswith((".exe", ".dmg", ".zip")):
+                return url
+            if system == "windows" and name.endswith(".exe"):
+                return url
+            if system == "darwin"  and name.endswith(".dmg"):
+                return url
+        return ""
+
+    # ---- Slots called on the main thread via signals ----
+    @QtCore.Slot(str, str)
+    def _on_update_found(self, version: str, url: str):
+        is_direct = url and not url.startswith("https://github.com")
+
+        if is_direct:
+            msg = (
+                f"WhisperDrop {version} is available — you have {APP_VERSION}.\n\n"
+                "Download and install now? The app will need to restart to use the new version."
+            )
+        else:
+            msg = (
+                f"WhisperDrop {version} is available — you have {APP_VERSION}.\n\n"
+                "Open the download page?"
+            )
+
+        reply = QMessageBox.question(
+            self, "Update Available", msg,
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        if is_direct:
+            self._download_and_install(url, version)
+        else:
+            QDesktopServices.openUrl(QUrl(url))
+
+    @QtCore.Slot()
+    def _on_update_none(self):
+        QMessageBox.information(
+            self, "Up to date", f"You’re on the latest version ({APP_VERSION})."
+        )
+
+    @QtCore.Slot(str)
+    def _on_update_error(self, msg: str):
+        QMessageBox.warning(
+            self, "Update check failed", f"Could not check for updates.\n\n{msg}"
+        )
+
+    # ---- Download + install ----
+    def _download_and_install(self, url: str, version: str):
+        progress_dlg = QtWidgets.QProgressDialog(
+            f"Downloading WhisperDrop {version}…", "Cancel", 0, 100, self
+        )
+        progress_dlg.setWindowTitle("Updating WhisperDrop")
+        progress_dlg.setWindowModality(Qt.WindowModal)
+        progress_dlg.setMinimumDuration(0)
+        progress_dlg.setValue(0)
+
+        cancelled = threading.Event()
+        progress_dlg.canceled.connect(cancelled.set)
+
+        result: dict = {}
+
+        def do_download():
+            try:
+                req = urllib.request.Request(
+                    url, headers={"User-Agent": f"{APP_NAME}/{APP_VERSION}"}
+                )
+                with urllib.request.urlopen(req, timeout=120) as resp:
+                    total = int(resp.headers.get("Content-Length", 0) or 0)
+                    downloaded = 0
+
+                    fd, tmp_path = tempfile.mkstemp(suffix=".tmp")
+                    try:
+                        with os.fdopen(fd, "wb") as f:
+                            while True:
+                                if cancelled.is_set():
+                                    result["cancelled"] = True
+                                    return
+                                chunk = resp.read(65536)
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                if total:
+                                    pct = int(downloaded / total * 100)
+                                    QtCore.QMetaObject.invokeMethod(
+                                        progress_dlg, "setValue",
+                                        Qt.QueuedConnection,
+                                        QtCore.Q_ARG(int, pct)
+                                    )
+                    except Exception:
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
+                        raise
+
+                result["tmp_path"] = tmp_path
+
+            except Exception as e:
+                result["error"] = str(e)
+            finally:
+                QtCore.QMetaObject.invokeMethod(
+                    progress_dlg, "accept", Qt.QueuedConnection
+                )
+
+        thread = threading.Thread(target=do_download, daemon=True)
+        thread.start()
+        progress_dlg.exec()
+        thread.join(timeout=5)
+
+        if result.get("cancelled"):
+            return
+
+        if "error" in result:
+            QMessageBox.warning(
+                self, "Download Failed",
+                f"Could not download the update.\n\n{result[‘error’]}"
+            )
+            return
+
+        tmp_path = result.get("tmp_path")
+        if not tmp_path:
+            return
+
+        self._apply_update(tmp_path, version)
+
+    def _apply_update(self, tmp_path: str, version: str):
+        """Replace the running binary with the downloaded file."""
+        is_frozen = getattr(sys, "frozen", False)
+
+        if not is_frozen:
+            # Running from source — can’t auto-replace a .py script meaningfully.
+            QMessageBox.information(
+                self, "Download Complete",
+                f"WhisperDrop {version} has been downloaded to:\n{tmp_path}\n\n"
+                "Replace your current script file manually to complete the update."
+            )
+            return
+
+        current_exe = sys.executable
+
+        try:
+            # Make the new binary executable
+            mode = os.stat(tmp_path).st_mode
+            os.chmod(tmp_path, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+            if platform.system().lower() == "windows":
+                # Windows won’t let us replace a running .exe — use a helper batch
+                # that waits for this process to exit, swaps the file, then relaunches.
+                bat_path = tmp_path + "_updater.bat"
+                with open(bat_path, "w") as f:
+                    f.write(
+                        f"@echo off\n"
+                        f"timeout /t 2 /nobreak >nul\n"
+                        f’move /y "{tmp_path}" "{current_exe}"\n’
+                        f’start "" "{current_exe}"\n’
+                        f"del \"%~f0\"\n"
+                    )
+                subprocess.Popen(
+                    ["cmd", "/c", bat_path],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    close_fds=True,
+                )
+                QMessageBox.information(
+                    self, "Update Ready",
+                    f"WhisperDrop {version} will be applied as the app closes.\n\n"
+                    "The app will restart automatically."
+                )
+                QtWidgets.QApplication.quit()
+            else:
+                # Linux / macOS: atomic replace (safe on POSIX even while running)
+                os.replace(tmp_path, current_exe)
+                QMessageBox.information(
+                    self, "Update Installed",
+                    f"WhisperDrop {version} has been installed.\n\n"
+                    "Please restart the app to use the new version."
+                )
+
+        except Exception as e:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            QMessageBox.warning(
+                self, "Update Failed",
+                f"Could not replace the executable.\n\n{e}\n\n"
+                "Try running the app as an administrator, or download the update manually."
+            )
 
     @staticmethod
     def _is_newer(latest: str, current: str) -> bool:
