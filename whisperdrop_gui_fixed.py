@@ -34,18 +34,26 @@ from typing import List, Optional, Tuple
 
 from PySide6 import QtCore, QtGui, QtWidgets
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFileDialog, QListWidget, QListWidgetItem,
     QComboBox, QCheckBox, QPlainTextEdit, QMessageBox, QProgressBar,
-    QLineEdit, QGroupBox, QFormLayout
+    QLineEdit, QGroupBox, QFormLayout, QDialog, QDialogButtonBox
 )
 from PySide6.QtGui import QDesktopServices
 
 
 APP_NAME = "WhisperDrop"
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
+APP_AUTHOR = "Michael Galde"
+APP_EMAIL = "WhisperDrop@saguarosec.com"
+APP_WEBSITE = "https://saguarosec.com/"
+APP_GITHUB = "https://github.com/mgalde"
+
+# Icon bundled alongside the script (or frozen exe)
+_HERE = os.path.dirname(os.path.abspath(__file__))
+APP_ICON_PATH = os.path.join(_HERE, "WhisperDrop.png")
 
 # ---- Update config (optional) ----
 # If you publish this on GitHub, set:
@@ -156,7 +164,7 @@ class WhisperWorker(QtCore.QObject):
             # Sanity check before starting
             if not shutil.which("whisper"):
                 self.fatal.emit(
-                    "I can’t find the `whisper` command.\n\n"
+                    "I can't find the `whisper` command.\n\n"
                     "Install it first (openai/whisper) so the `whisper` executable is on your PATH, "
                     "then reopen this app."
                 )
@@ -250,6 +258,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"{APP_NAME} {APP_VERSION}")
         self.resize(980, 700)
+        if os.path.exists(APP_ICON_PATH):
+            self.setWindowIcon(QIcon(APP_ICON_PATH))
 
         self.jobs: List[Job] = []
         self.thread: Optional[QtCore.QThread] = None
@@ -556,7 +566,7 @@ class MainWindow(QMainWindow):
         self.progress.setValue(0)
         self.statusBar().showMessage("Running…")
 
-        # Start heartbeat timer so the UI isn’t blank if whisper is quiet for a while
+        # Start heartbeat timer so the UI isn't blank if whisper is quiet for a while
         self._run_started_at = time.time()
         self._stop_requested = False
         self._status_timer.start()
@@ -627,13 +637,69 @@ class MainWindow(QMainWindow):
 
     # ---- Help / Updates ----
     def about(self):
-        QMessageBox.information(
-            self,
-            "About WhisperDrop",
-            f"{APP_NAME} {APP_VERSION}\n\n"
-            "A drag-and-drop GUI wrapper for the `whisper` CLI (openai/whisper).\n"
-            "It runs transcription locally using your installed Whisper setup."
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"About {APP_NAME}")
+        dlg.setWindowIcon(self.windowIcon())
+        dlg.setMinimumWidth(360)
+
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(10)
+
+        # Icon
+        if os.path.exists(APP_ICON_PATH):
+            icon_label = QLabel()
+            pix = QPixmap(APP_ICON_PATH).scaled(
+                80, 80, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            )
+            icon_label.setPixmap(pix)
+            icon_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(icon_label)
+
+        # App name + version
+        name_label = QLabel(f"<b style='font-size:16px'>{APP_NAME}</b>")
+        name_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(name_label)
+
+        version_label = QLabel(f"Version {APP_VERSION}")
+        version_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(version_label)
+
+        # Description
+        desc_label = QLabel(
+            "A drag-and-drop GUI wrapper for the <tt>whisper</tt> CLI (openai/whisper).<br>"
+            "Runs transcription entirely locally — nothing is sent to the cloud."
         )
+        desc_label.setWordWrap(True)
+        desc_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(desc_label)
+
+        # Separator line
+        line = QWidget()
+        line.setFixedHeight(1)
+        line.setStyleSheet("background-color: #555;")
+        layout.addWidget(line)
+
+        # Author / contact
+        author_label = QLabel(f"<b>Author:</b> {APP_AUTHOR}")
+        author_label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(author_label)
+
+        for text, url in [
+            (APP_EMAIL, f"mailto:{APP_EMAIL}"),
+            (APP_WEBSITE, APP_WEBSITE),
+            (APP_GITHUB, APP_GITHUB),
+        ]:
+            link = QLabel(f'<a href="{url}">{text}</a>')
+            link.setOpenExternalLinks(True)
+            link.setAlignment(Qt.AlignCenter)
+            layout.addWidget(link)
+
+        # Close button
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(dlg.accept)
+        layout.addWidget(buttons)
+
+        dlg.exec()
 
     # ---- Auto-check (once per run, silent if up to date) ----
     def _auto_check_update(self):
@@ -725,7 +791,7 @@ class MainWindow(QMainWindow):
     @QtCore.Slot()
     def _on_update_none(self):
         QMessageBox.information(
-            self, "Up to date", f"You’re on the latest version ({APP_VERSION})."
+            self, "Up to date", f"You're on the latest version ({APP_VERSION})."
         )
 
     @QtCore.Slot(str)
@@ -804,7 +870,7 @@ class MainWindow(QMainWindow):
         if "error" in result:
             QMessageBox.warning(
                 self, "Download Failed",
-                f"Could not download the update.\n\n{result[‘error’]}"
+                f"Could not download the update.\n\n{result['error']}"
             )
             return
 
@@ -819,7 +885,7 @@ class MainWindow(QMainWindow):
         is_frozen = getattr(sys, "frozen", False)
 
         if not is_frozen:
-            # Running from source — can’t auto-replace a .py script meaningfully.
+            # Running from source — can't auto-replace a .py script meaningfully.
             QMessageBox.information(
                 self, "Download Complete",
                 f"WhisperDrop {version} has been downloaded to:\n{tmp_path}\n\n"
@@ -835,15 +901,15 @@ class MainWindow(QMainWindow):
             os.chmod(tmp_path, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
             if platform.system().lower() == "windows":
-                # Windows won’t let us replace a running .exe — use a helper batch
+                # Windows won't let us replace a running .exe — use a helper batch
                 # that waits for this process to exit, swaps the file, then relaunches.
                 bat_path = tmp_path + "_updater.bat"
                 with open(bat_path, "w") as f:
                     f.write(
                         f"@echo off\n"
                         f"timeout /t 2 /nobreak >nul\n"
-                        f’move /y "{tmp_path}" "{current_exe}"\n’
-                        f’start "" "{current_exe}"\n’
+                        f'move /y "{tmp_path}" "{current_exe}"\n'
+                        f'start "" "{current_exe}"\n'
                         f"del \"%~f0\"\n"
                     )
                 subprocess.Popen(
@@ -888,8 +954,9 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    # Better default font on HiDPI
     app.setApplicationName(APP_NAME)
+    if os.path.exists(APP_ICON_PATH):
+        app.setWindowIcon(QIcon(APP_ICON_PATH))
     w = MainWindow()
     w.show()
     sys.exit(app.exec())
