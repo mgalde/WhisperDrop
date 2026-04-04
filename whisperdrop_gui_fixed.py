@@ -51,8 +51,11 @@ APP_EMAIL = "WhisperDrop@saguarosec.com"
 APP_WEBSITE = "https://saguarosec.com/"
 APP_GITHUB = "https://github.com/mgalde"
 
-# Icon bundled alongside the script (or frozen exe)
-_HERE = os.path.dirname(os.path.abspath(__file__))
+# Icon bundled alongside the script (or frozen exe via PyInstaller)
+if getattr(sys, "frozen", False):
+    _HERE = sys._MEIPASS
+else:
+    _HERE = os.path.dirname(os.path.abspath(__file__))
 APP_ICON_PATH = os.path.join(_HERE, "WhisperDrop.png")
 
 # ---- Update config (optional) ----
@@ -640,7 +643,7 @@ class MainWindow(QMainWindow):
         dlg = QDialog(self)
         dlg.setWindowTitle(f"About {APP_NAME}")
         dlg.setWindowIcon(self.windowIcon())
-        dlg.setMinimumWidth(360)
+        dlg.setMinimumWidth(500)
 
         layout = QVBoxLayout(dlg)
         layout.setSpacing(10)
