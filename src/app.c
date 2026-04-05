@@ -4,6 +4,7 @@
 #include <glib/gstdio.h>
 #include <stdarg.h>
 #include <string.h>
+#include <unistd.h>
 
 /* ==========================================================
    Job helpers
@@ -542,11 +543,19 @@ static void on_about_activated(GSimpleAction *action, GVariant *param, gpointer 
     gtk_about_dialog_set_comments   (GTK_ABOUT_DIALOG(dlg),
         "A drag-and-drop GUI wrapper for the whisper CLI (openai/whisper).\n"
         "Runs transcription entirely locally \u2014 nothing is sent to the cloud.");
+    gtk_about_dialog_set_license_type(GTK_ABOUT_DIALOG(dlg), GTK_LICENSE_MIT_X11);
+
+    /* Website button on the main page */
     gtk_about_dialog_set_website      (GTK_ABOUT_DIALOG(dlg), APP_WEBSITE);
-    gtk_about_dialog_set_website_label(GTK_ABOUT_DIALOG(dlg), APP_WEBSITE);
+    gtk_about_dialog_set_website_label(GTK_ABOUT_DIALOG(dlg), "saguarosec.com");
+
+    /* Credits tab — author with clickable mailto: email */
     const gchar *authors[] = { APP_AUTHOR " <" APP_EMAIL ">", NULL };
-    gtk_about_dialog_set_authors      (GTK_ABOUT_DIALOG(dlg), authors);
-    gtk_about_dialog_set_license_type (GTK_ABOUT_DIALOG(dlg), GTK_LICENSE_MIT_X11);
+    gtk_about_dialog_set_authors(GTK_ABOUT_DIALOG(dlg), authors);
+
+    /* Credits tab — GitHub as a dedicated section */
+    const gchar *github[] = { APP_GITHUB, NULL };
+    gtk_about_dialog_add_credit_section(GTK_ABOUT_DIALOG(dlg), "GitHub", github);
 
     GdkTexture *tex = gdk_texture_new_from_resource(ICON_RESOURCE);
     if (tex) {
@@ -599,11 +608,99 @@ static gboolean auto_check_update(gpointer data) {
 }
 
 /* ==========================================================
+   Desktop integration  (icon + .desktop file for KDE/Wayland)
+
+   On Wayland, window icons come from the .desktop file that matches
+   the GApplication app_id — not from gtk_window_set_icon_name().
+   We extract the bundled PNG and write a .desktop file to
+   ~/.local/share/ on every launch so the icon is always current
+   even if the binary has moved.
+   ========================================================== */
+
+static void setup_desktop_integration(void) {
+    /* ---- Extract icon to ~/.local/share/icons/ ---- */
+    gchar *icon_dir = g_build_filename(
+        g_get_user_data_dir(), "icons", "hicolor", "256x256", "apps", NULL);
+    g_mkdir_with_parents(icon_dir, 0755);
+
+    gchar *icon_dest = g_build_filename(
+        icon_dir, "com.saguarosec.WhisperDrop.png", NULL);
+
+    if (!g_file_test(icon_dest, G_FILE_TEST_EXISTS)) {
+        GBytes *data = g_resources_lookup_data(
+            ICON_RESOURCE, G_RESOURCE_LOOKUP_FLAGS_NONE, NULL);
+        if (data) {
+            gsize       len = 0;
+            const void *ptr = g_bytes_get_data(data, &len);
+            g_file_set_contents(icon_dest, ptr, (gssize)len, NULL);
+            g_bytes_unref(data);
+        }
+    }
+    g_free(icon_dest);
+    g_free(icon_dir);
+
+    /* ---- Write .desktop file pointing at the running binary ---- */
+    char exe_buf[4096] = {0};
+    ssize_t exe_len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
+    if (exe_len <= 0) return;
+    exe_buf[exe_len] = '\0';
+
+    gchar *apps_dir = g_build_filename(g_get_user_data_dir(), "applications", NULL);
+    g_mkdir_with_parents(apps_dir, 0755);
+
+    gchar *desktop_dest = g_build_filename(
+        apps_dir, "com.saguarosec.WhisperDrop.desktop", NULL);
+
+    gchar *contents = g_strdup_printf(
+        "[Desktop Entry]\n"
+        "Name=WhisperDrop\n"
+        "Comment=Drag-and-drop audio transcription with Whisper\n"
+        "Exec=%s\n"
+        "Icon=com.saguarosec.WhisperDrop\n"
+        "Type=Application\n"
+        "Categories=AudioVideo;Audio;\n"
+        "StartupWMClass=WhisperDrop\n",
+        exe_buf);
+
+    g_file_set_contents(desktop_dest, contents, -1, NULL);
+    g_free(contents);
+    g_free(desktop_dest);
+
+    /* ---- Refresh caches (fire-and-forget, errors silently ignored) ---- */
+    gchar *hicolor_dir = g_build_filename(
+        g_get_user_data_dir(), "icons", "hicolor", NULL);
+    const gchar *cache_argv[] = {
+        "gtk-update-icon-cache", "-f", "-t", hicolor_dir, NULL
+    };
+    g_spawn_async(NULL, (gchar **)cache_argv, NULL,
+                  G_SPAWN_SEARCH_PATH |
+                  G_SPAWN_STDOUT_TO_DEV_NULL |
+                  G_SPAWN_STDERR_TO_DEV_NULL,
+                  NULL, NULL, NULL, NULL);
+
+    const gchar *db_argv[] = {
+        "update-desktop-database", apps_dir, NULL
+    };
+    g_spawn_async(NULL, (gchar **)db_argv, NULL,
+                  G_SPAWN_SEARCH_PATH |
+                  G_SPAWN_STDOUT_TO_DEV_NULL |
+                  G_SPAWN_STDERR_TO_DEV_NULL,
+                  NULL, NULL, NULL, NULL);
+
+    g_free(hicolor_dir);
+    g_free(apps_dir);
+}
+
+/* ==========================================================
    UI construction  (app_activate)
    ========================================================== */
 
 void app_activate(GtkApplication *gapp, gpointer user_data) {
     AppState *app = user_data;
+
+    /* Install icon + .desktop file so KDE/Wayland can show the window icon.
+       Must happen before gtk_window_present so the compositor sees the files. */
+    setup_desktop_integration();
 
     /* ---- Actions ---- */
     GSimpleAction *act_about   = g_simple_action_new("about",         NULL);
