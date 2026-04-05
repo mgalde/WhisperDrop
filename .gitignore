@@ -1,5 +1,8 @@
+# Meson / C build directories
+build*/
+subprojects/
+
 # PyInstaller build artifacts
-build/
 dist/
 
 # Python
