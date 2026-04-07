@@ -13,6 +13,13 @@
 #include <string.h>
 #include <unistd.h>
 
+/* ─── Embedded assets (generated at build time by embed_binary.py) ───────── */
+
+extern const unsigned char whisperdrop_binary[];
+extern const size_t        whisperdrop_binary_len;
+extern const unsigned char whisperdrop_icon[];
+extern const size_t        whisperdrop_icon_len;
+
 /* ─── Constants ──────────────────────────────────────────────────────────── */
 
 #define WIN_W  620
@@ -246,6 +253,58 @@ static gchar *find_icon(const gchar *dir)
     if (g_file_test(p, G_FILE_TEST_EXISTS)) return p;
     g_free(p);
     return NULL;
+}
+
+/* ─── Embedded asset helpers ─────────────────────────────────────────────── */
+
+/*
+ * Write the embedded WhisperDrop binary to a temporary file.
+ * Returns the path (caller must g_free + g_unlink when done),
+ * or NULL on failure.
+ */
+static gchar *extract_embedded_binary(void)
+{
+    GError *err  = NULL;
+    gchar  *path = NULL;
+    gint    fd   = g_file_open_tmp("whisperdrop-extract-XXXXXX", &path, &err);
+    if (fd < 0) {
+        g_clear_error(&err);
+        return NULL;
+    }
+    gsize written = 0;
+    while (written < whisperdrop_binary_len) {
+        gssize n = write(fd, whisperdrop_binary + written,
+                         whisperdrop_binary_len - written);
+        if (n <= 0) break;
+        written += (gsize)n;
+    }
+    close(fd);
+    if (written != whisperdrop_binary_len) {
+        g_unlink(path);
+        g_free(path);
+        return NULL;
+    }
+    return path;
+}
+
+/*
+ * Load the embedded PNG icon from memory into a GtkWidget (GtkImage).
+ * Returns NULL if GDK can't decode it (caller falls back to theme icon).
+ */
+static GtkWidget *make_logo_from_embedded(int pixel_size)
+{
+    GBytes *bytes = g_bytes_new_static(whisperdrop_icon, whisperdrop_icon_len);
+    GError *err   = NULL;
+    GdkTexture *tex = gdk_texture_new_from_bytes(bytes, &err);
+    g_bytes_unref(bytes);
+    if (!tex) {
+        g_clear_error(&err);
+        return NULL;
+    }
+    GtkWidget *img = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+    g_object_unref(tex);
+    gtk_image_set_pixel_size(GTK_IMAGE(img), pixel_size);
+    return img;
 }
 
 /* ─── Dialog helpers ─────────────────────────────────────────────────────── */
@@ -782,47 +841,60 @@ static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
         emit_log(s, "Transcription engine: already installed.", -1);
     }
 
-    /* ── Step 3: Copy binary ─────────────────────────────────────────── */
+    /* ── Step 3: Install binary ──────────────────────────────────────── */
 
-    emit_log(s, "Copying WhisperDrop to your applications folder\xe2\x80\xa6", 0.55);
-
-    if (!s->src_bin) {
-        fail_install(s, task, FALSE,
-            "WhisperDrop application not found",
-            "The installer could not locate the WhisperDrop application file.\n\n"
-            "Please place the installer in the same folder as the WhisperDrop "
-            "application and try again.");
-        return;
-    }
+    emit_log(s, "Installing WhisperDrop\xe2\x80\xa6", 0.55);
 
     gchar *bin_dir  = g_build_filename(g_get_home_dir(), ".local", "bin", NULL);
     g_mkdir_with_parents(bin_dir, 0755);
     gchar *dest_bin = g_build_filename(bin_dir, "WhisperDrop", NULL);
     g_free(bin_dir);
 
-    GFile *fsrc = g_file_new_for_path(s->src_bin);
-    GFile *fdst = g_file_new_for_path(dest_bin);
-    gboolean cp_ok = g_file_copy(fsrc, fdst,
-        G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, &err);
-    g_object_unref(fsrc);
-    g_object_unref(fdst);
+    gboolean cp_ok = FALSE;
+
+    if (s->src_bin) {
+        /* Adjacent binary found — copy it directly */
+        GFile *fsrc = g_file_new_for_path(s->src_bin);
+        GFile *fdst = g_file_new_for_path(dest_bin);
+        cp_ok = g_file_copy(fsrc, fdst,
+            G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, &err);
+        g_object_unref(fsrc);
+        g_object_unref(fdst);
+    } else {
+        /* No adjacent binary — extract the embedded copy */
+        gchar *tmp = extract_embedded_binary();
+        if (tmp) {
+            GFile *fsrc = g_file_new_for_path(tmp);
+            GFile *fdst = g_file_new_for_path(dest_bin);
+            cp_ok = g_file_copy(fsrc, fdst,
+                G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, &err);
+            g_object_unref(fsrc);
+            g_object_unref(fdst);
+            g_unlink(tmp);
+            g_free(tmp);
+        } else {
+            /* Should never happen — embedded data is always present */
+            err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_FAILED,
+                "Could not extract embedded application data.");
+        }
+    }
 
     if (!cp_ok) {
         gchar *body = g_strdup_printf(
-            "Could not copy the application file.\n\n"
+            "Could not install the application.\n\n"
             "Please check that you have write access to your home folder "
             "and try again.\n\nDetails: %s",
             err ? err->message : "unknown error");
         g_clear_error(&err);
         g_free(dest_bin);
-        fail_install(s, task, FALSE, "Could not copy WhisperDrop", body);
+        fail_install(s, task, FALSE, "Could not install WhisperDrop", body);
         g_free(body);
         return;
     }
 
     g_chmod(dest_bin, 0755);
     g_free(dest_bin);
-    emit_log(s, "WhisperDrop copied successfully.", 0.70);
+    emit_log(s, "WhisperDrop installed successfully.", 0.70);
 
     /* ── Step 4: Application icon ────────────────────────────────────── */
 
@@ -833,11 +905,17 @@ static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
     g_free(icons_dir);
 
     if (s->src_ico) {
+        /* Copy from a file found on disk */
         GFile *isrc = g_file_new_for_path(s->src_ico);
         GFile *idst = g_file_new_for_path(dest_ico);
         g_file_copy(isrc, idst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, NULL);
         g_object_unref(isrc);
         g_object_unref(idst);
+    } else {
+        /* Write the embedded PNG bytes directly */
+        g_file_set_contents(dest_ico,
+            (const gchar *)whisperdrop_icon,
+            (gssize)whisperdrop_icon_len, NULL);
     }
     g_free(dest_ico);
 
@@ -1117,11 +1195,12 @@ static void build_window(Inst *s)
     gtk_widget_set_margin_top(hdr, 10);
     gtk_widget_set_margin_bottom(hdr, 10);
 
-    GtkWidget *logo;
-    if (s->src_ico) {
+    GtkWidget *logo = NULL;
+    if (s->src_ico)
         logo = gtk_image_new_from_file(s->src_ico);
-        gtk_image_set_pixel_size(GTK_IMAGE(logo), 64);
-    } else {
+    if (!logo)
+        logo = make_logo_from_embedded(64);
+    if (!logo) {
         logo = gtk_image_new_from_icon_name("application-x-executable");
         gtk_image_set_pixel_size(GTK_IMAGE(logo), 64);
     }

@@ -17,9 +17,8 @@ resources = gnome.compile_resources(
   source_dir : '.',
   c_name : 'whisperdrop_resources')
 
-subdir('installer')
-
-executable('WhisperDrop',
+# Build the main app first so the installer subdir can embed it
+whisperdrop_exe = executable('WhisperDrop',
   sources : [
     'src/main.c',
     'src/app.c',
@@ -31,3 +30,6 @@ executable('WhisperDrop',
   # GtkComboBoxText is deprecated in GTK 4.10 but still functional
   c_args : ['-Wno-deprecated-declarations'],
   install : true)
+
+# Installer and uninstaller — must come after whisperdrop_exe is defined
+subdir('installer')
