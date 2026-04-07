@@ -606,7 +606,74 @@ static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
     Inst *s = td;
     GError *err = NULL;
 
-    emit_log(s, "Starting installation\xe2\x80\xa6", 0.05);
+    emit_log(s, "Starting installation\xe2\x80\xa6", 0.02);
+
+    /* ── Step 0: Clean up any previous installation ───────────────────── */
+
+    /* Desktop entry files — all locations WhisperDrop may have left behind */
+    const char *dt_paths[] = {
+        ".local/share/applications/WhisperDrop.desktop",
+        ".local/share/applications/whisperdrop.desktop",
+        ".local/share/applications/com.saguarosec.WhisperDrop.desktop",
+        NULL
+    };
+
+    gboolean had_previous = FALSE;
+    for (int i = 0; dt_paths[i]; i++) {
+        gchar *p = g_build_filename(g_get_home_dir(), dt_paths[i], NULL);
+        if (g_file_test(p, G_FILE_TEST_EXISTS)) {
+            had_previous = TRUE;
+            GFile *f = g_file_new_for_path(p);
+            g_file_delete(f, NULL, NULL);
+            g_object_unref(f);
+        }
+        g_free(p);
+    }
+
+    /* Old binary location(s) */
+    const char *bin_paths[] = {
+        ".local/bin/WhisperDrop",
+        ".local/bin/whisperdrop",
+        NULL
+    };
+    for (int i = 0; bin_paths[i]; i++) {
+        gchar *p = g_build_filename(g_get_home_dir(), bin_paths[i], NULL);
+        if (g_file_test(p, G_FILE_TEST_EXISTS)) {
+            had_previous = TRUE;
+            GFile *f = g_file_new_for_path(p);
+            g_file_delete(f, NULL, NULL);
+            g_object_unref(f);
+        }
+        g_free(p);
+    }
+
+    /* Old icon(s) */
+    const char *ico_paths[] = {
+        ".local/share/icons/WhisperDrop.png",
+        ".local/share/icons/whisperdrop.png",
+        NULL
+    };
+    for (int i = 0; ico_paths[i]; i++) {
+        gchar *p = g_build_filename(g_get_home_dir(), ico_paths[i], NULL);
+        if (g_file_test(p, G_FILE_TEST_EXISTS)) {
+            had_previous = TRUE;
+            GFile *f = g_file_new_for_path(p);
+            g_file_delete(f, NULL, NULL);
+            g_object_unref(f);
+        }
+        g_free(p);
+    }
+
+    if (had_previous) {
+        /* Force the desktop database to forget the old entries immediately */
+        gchar *apps_dir = g_build_filename(g_get_home_dir(), ".local",
+                                           "share", "applications", NULL);
+        gchar *upd = g_strdup_printf("update-desktop-database %s", apps_dir);
+        g_free(apps_dir);
+        g_spawn_command_line_sync(upd, NULL, NULL, NULL, NULL);
+        g_free(upd);
+        emit_log(s, "Previous installation removed.", 0.05);
+    }
 
     /* ── Step 1: System packages ──────────────────────────────────────── */
 

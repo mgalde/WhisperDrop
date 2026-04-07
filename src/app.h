@@ -3,7 +3,7 @@
 
 /* ---- App metadata ---- */
 #define APP_NAME      "WhisperDrop"
-#define APP_VERSION   "0.5.0"
+#define APP_VERSION   "0.6.0"
 #define APP_AUTHOR    "Michael Galde"
 #define APP_EMAIL     "WhisperDrop@saguarosec.com"
 #define APP_WEBSITE   "https://saguarosec.com/"

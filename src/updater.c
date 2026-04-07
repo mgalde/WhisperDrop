@@ -174,19 +174,31 @@ static void on_update_dialog_response(GtkDialog *dlg, int response, gpointer dat
    GitHub Releases check
    ========================================================== */
 
-/* Pick the best Linux asset URL from the releases asset list */
+/* Pick the main WhisperDrop binary URL from the release assets.
+ * Rules (in priority order):
+ *   1. Must not be the installer or uninstaller binary.
+ *   2. Must not be a Windows (.exe), macOS (.dmg), or archive (.zip/.tar*) file.
+ *   3. Take the first asset whose name starts with "WhisperDrop-" and passes. */
 static gchar *pick_asset_url(JsonArray *assets) {
     guint n = json_array_get_length(assets);
     for (guint i = 0; i < n; i++) {
         JsonObject  *asset = json_array_get_object_element(assets, i);
         const gchar *name  = json_object_get_string_member(asset, "name");
         const gchar *url   = json_object_get_string_member(asset, "browser_download_url");
-        if (!name || !url) continue;
-        /* Linux: skip Windows/macOS artifacts */
-        if (g_str_has_suffix(name, ".exe")) continue;
-        if (g_str_has_suffix(name, ".dmg")) continue;
-        if (g_str_has_suffix(name, ".zip")) continue;
-        if (url[0] != '\0') return g_strdup(url);
+        if (!name || !url || url[0] == '\0') continue;
+        /* Skip installer and uninstaller assets */
+        if (g_ascii_strcasecmp(name, "") == 0) continue;
+        if (strstr(name, "Installer")   != NULL) continue;
+        if (strstr(name, "Uninstaller") != NULL) continue;
+        /* Skip non-Linux and archive formats */
+        if (g_str_has_suffix(name, ".exe"))  continue;
+        if (g_str_has_suffix(name, ".dmg"))  continue;
+        if (g_str_has_suffix(name, ".zip"))  continue;
+        if (g_str_has_suffix(name, ".tar"))  continue;
+        if (strstr(name, ".tar.") != NULL)   continue;
+        /* Must be the main binary: name starts with "WhisperDrop-" */
+        if (!g_str_has_prefix(name, "WhisperDrop-")) continue;
+        return g_strdup(url);
     }
     return NULL;
 }
@@ -276,7 +288,9 @@ static void on_check_response(GObject *source, GAsyncResult *result, gpointer da
                 : g_strdup_printf("https://github.com/%s/releases", GITHUB_REPO);
         }
 
-        gboolean is_direct = !g_str_has_prefix(download_url, "https://github.com");
+        /* GitHub release download URLs contain /releases/download/; page
+         * URLs contain /releases/tag/ or /releases/ alone. */
+        gboolean is_direct = strstr(download_url, "/releases/download/") != NULL;
 
         UpdateDialogData *ud = g_new0(UpdateDialogData, 1);
         ud->app     = cd->app;
