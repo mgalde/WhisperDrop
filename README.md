@@ -65,6 +65,22 @@ If you see a help message, you are ready to go.
 
 ## Installing WhisperDrop
 
+### Option C — Graphical Installer (Recommended)
+
+The graphical installer handles everything for you: it checks your system for all required software, installs anything that is missing, copies WhisperDrop into place, and adds it to your Applications menu. No terminal required.
+
+**Steps:**
+
+1. Go to the [Releases page](https://github.com/mgalde/WhisperDrop/releases/latest)
+2. Download the installer archive for your platform and extract it
+3. Double-click **whisperdrop-installer** (or run `./whisperdrop-installer` once to allow execution)
+4. Follow the on-screen steps — you may be asked for your password once to install system packages
+5. Click **Launch WhisperDrop** when the installer finishes
+
+> If you later want to remove WhisperDrop, run **whisperdrop-uninstaller** from the same folder.
+
+---
+
 ### Option A — Download the pre-built binary (easiest)
 
 1. Go to the [Releases page](https://github.com/mgalde/WhisperDrop/releases/latest)

@@ -15,20 +15,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install dependencies
-        run: pip install PySide6 pyinstaller
-
-      - name: Build executable
+      - name: Install build dependencies
         run: |
-          pyinstaller --onefile --windowed --name WhisperDrop whisperdrop_gui_fixed.py
+          sudo apt-get update
+          sudo apt-get install -y \
+            gcc \
+            meson \
+            ninja-build \
+            libgtk-4-dev \
+            libsoup-3.0-dev \
+            libjson-glib-dev
+
+      - name: Configure
+        run: meson setup build --buildtype=release
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Rename artifacts
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          cp build/WhisperDrop                       WhisperDrop-${TAG}-linux-x86_64
+          cp build/installer/whisperdrop-installer   WhisperDrop-Installer-${TAG}-linux-x86_64
+          cp build/installer/whisperdrop-uninstaller WhisperDrop-Uninstaller-${TAG}-linux-x86_64
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/WhisperDrop
+          files: |
+            WhisperDrop-*-linux-x86_64
+            WhisperDrop-Installer-*-linux-x86_64
+            WhisperDrop-Uninstaller-*-linux-x86_64
           generate_release_notes: true

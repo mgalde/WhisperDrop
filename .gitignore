@@ -1,19 +1,15 @@
-# Meson / C build directories
+# Meson / C build output
 build*/
 subprojects/
 
-# PyInstaller build artifacts
-dist/
-
-# Python
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
-venv/
-*.egg-info/
-
-# OS
+# OS / tools
 .DS_Store
 Thumbs.db
-Rectangle
+Rectangle/
+
+# Python venv and cached bytecode (local tooling only)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+dist/

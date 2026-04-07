@@ -17,6 +17,8 @@ resources = gnome.compile_resources(
   source_dir : '.',
   c_name : 'whisperdrop_resources')
 
+subdir('installer')
+
 executable('WhisperDrop',
   sources : [
     'src/main.c',
