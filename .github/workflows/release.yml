@@ -76,27 +76,23 @@ jobs:
 
       - name: Bundle DLLs
         run: |
-          set -euo pipefail
           TAG=${GITHUB_REF_NAME}
-          MINGW=/mingw64/bin
           OUT=WhisperDrop-windows-bundle
           mkdir -p "$OUT" "$OUT/share" "$OUT/lib" "$OUT/share/icons"
 
           cp build/WhisperDrop.exe                     "$OUT/WhisperDrop.exe"
           cp build/installer/whisperdrop-installer.exe "$OUT/WhisperDrop-Installer.exe"
 
-          # Copy every mingw64 DLL each binary depends on
-          # ldd output: "libfoo.dll => /mingw64/bin/libfoo.dll (0x...)"
-          for exe in "$OUT/WhisperDrop.exe" "$OUT/WhisperDrop-Installer.exe"; do
-            ldd "$exe" \
-              | grep -i '/mingw64/bin/' \
-              | sed 's|.* => \(/mingw64/bin/[^ ]*\).*|\1|' \
-              | sort -u \
-              | while IFS= read -r src; do
-                  dll=$(basename "$src")
-                  [ -f "$src" ] && cp -n "$src" "$OUT/$dll" && echo "  + $dll"
-                done
-          done
+          # Collect unique mingw64 DLLs from both exes in one pass, then copy each once
+          # ldd output format: "libfoo.dll => /mingw64/bin/libfoo.dll (0x...)"
+          { ldd "$OUT/WhisperDrop.exe"; ldd "$OUT/WhisperDrop-Installer.exe"; } \
+            | grep -i '/mingw64/bin/' \
+            | sed 's|.* => \(/mingw64/bin/[^ ]*\).*|\1|' \
+            | sort -u \
+            | while IFS= read -r src; do
+                dll=$(basename "$src")
+                cp "$src" "$OUT/$dll" && echo "  + $dll"
+              done
 
           # GTK4 runtime data (schemas, icons, pixbuf loaders)
           [ -d /mingw64/share/glib-2.0 ]      && cp -r /mingw64/share/glib-2.0      "$OUT/share/" || true
