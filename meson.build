@@ -32,4 +32,7 @@ whisperdrop_exe = executable('WhisperDrop',
   install : true)
 
 # Installer and uninstaller — must come after whisperdrop_exe is defined
-subdir('installer')
+# macOS: no graphical installer; ship the bare binary or .app bundle instead
+if host_machine.system() != 'darwin'
+  subdir('installer')
+endif

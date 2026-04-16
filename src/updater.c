@@ -12,6 +12,10 @@
 #else
 #include <unistd.h>
 #include <sys/stat.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
 #endif
 
 /* ==========================================================
@@ -45,9 +49,15 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
     g_unlink(tmp_path);
     return;
 #else
-    char    exe_buf[4096] = {0};
-    ssize_t len           = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
+    char exe_buf[4096] = {0};
+#ifdef __APPLE__
+    uint32_t exe_buf_size = sizeof(exe_buf);
+    int path_ok = _NSGetExecutablePath(exe_buf, &exe_buf_size);
+    if (path_ok != 0) {
+#else
+    ssize_t len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
     if (len <= 0) {
+#endif
         GtkWidget *dlg = gtk_message_dialog_new(
             GTK_WINDOW(app->window), GTK_DIALOG_MODAL,
             GTK_MESSAGE_WARNING, GTK_BUTTONS_OK,
@@ -58,7 +68,9 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
         g_signal_connect(dlg, "response", G_CALLBACK(gtk_window_destroy), NULL);
         return;
     }
+#ifndef __APPLE__
     exe_buf[len] = '\0';
+#endif
 
     g_chmod(tmp_path, 0755);
 
