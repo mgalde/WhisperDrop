@@ -44,3 +44,103 @@ jobs:
         with:
           files: WhisperDrop-*-linux-x86_64
           generate_release_notes: true
+
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gtk4
+            mingw-w64-x86_64-libsoup3
+            mingw-w64-x86_64-json-glib
+            mingw-w64-x86_64-meson
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-python
+
+      - name: Configure
+        run: meson setup build --buildtype=release
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Bundle DLLs and package
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          MINGW=/mingw64/bin
+          OUT=WhisperDrop-windows-bundle
+          mkdir -p "$OUT"
+
+          cp build/WhisperDrop.exe                     "$OUT/WhisperDrop.exe"
+          cp build/installer/whisperdrop-installer.exe "$OUT/WhisperDrop-Installer.exe"
+
+          # Copy every mingw64 DLL each binary depends on (recursive via ldd)
+          for exe in "$OUT/WhisperDrop.exe" "$OUT/WhisperDrop-Installer.exe"; do
+            ldd "$exe" \
+              | grep '/mingw64/bin/' \
+              | awk '{print $1}' \
+              | sort -u \
+              | while read dll; do
+                  [ -f "$MINGW/$dll" ] && cp -n "$MINGW/$dll" "$OUT/$dll"
+                done
+          done
+
+          # Also include the GTK4 share data (icons, themes, schemas)
+          cp -r /mingw64/share/glib-2.0         "$OUT/share/"
+          cp -r /mingw64/share/gtk-4.0          "$OUT/share/" 2>/dev/null || true
+          mkdir -p "$OUT/share/icons"
+          cp -r /mingw64/share/icons/hicolor     "$OUT/share/icons/" 2>/dev/null || true
+          cp -r /mingw64/lib/gdk-pixbuf-2.0      "$OUT/lib/"  2>/dev/null || true
+
+          # Standalone executables (just the .exe, no bundled DLLs — for MSYS2 users)
+          cp "$OUT/WhisperDrop.exe"           "WhisperDrop-${TAG}-windows-x86_64.exe"
+          cp "$OUT/WhisperDrop-Installer.exe" "WhisperDrop-Installer-${TAG}-windows-x86_64.exe"
+
+          # Portable bundle zip (exe + all DLLs + assets)
+          7z a "WhisperDrop-${TAG}-windows-x86_64-bundle.zip" "./$OUT/*"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            WhisperDrop-*-windows-x86_64.exe
+            WhisperDrop-Installer-*-windows-x86_64.exe
+            WhisperDrop-*-windows-x86_64-bundle.zip
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout macos branch
+        uses: actions/checkout@v4
+        with:
+          ref: macos
+
+      - name: Install dependencies
+        run: |
+          brew install gtk4 libsoup json-glib meson ninja
+
+      - name: Configure
+        run: meson setup build --buildtype=release
+
+      - name: Build
+        run: ninja -C build
+
+      - name: Rename artifact
+        run: |
+          TAG=${GITHUB_REF_NAME}
+          cp build/WhisperDrop WhisperDrop-${TAG}-macos-x86_64
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: WhisperDrop-*-macos-x86_64
