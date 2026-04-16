@@ -12,6 +12,11 @@
 #include <gio/gio.h>
 #include <unistd.h>
 
+/* ─── Embedded icon (generated at build time by embed_binary.py) ─────────── */
+
+extern const unsigned char whisperdrop_icon[];
+extern const size_t        whisperdrop_icon_len;
+
 /* ─── Constants ──────────────────────────────────────────────────────────── */
 
 #define WIN_W 520
@@ -81,6 +86,21 @@ static gchar *find_icon(const gchar *dir)
     if (g_file_test(p, G_FILE_TEST_EXISTS)) return p;
     g_free(p);
     return NULL;
+}
+
+/* ─── Embedded icon loader ───────────────────────────────────────────────── */
+
+static GtkWidget *make_logo_from_embedded(int pixel_size)
+{
+    GBytes     *bytes = g_bytes_new_static(whisperdrop_icon, whisperdrop_icon_len);
+    GError     *err   = NULL;
+    GdkTexture *tex   = gdk_texture_new_from_bytes(bytes, &err);
+    g_bytes_unref(bytes);
+    if (!tex) { g_clear_error(&err); return NULL; }
+    GtkWidget *img = gtk_image_new_from_paintable(GDK_PAINTABLE(tex));
+    g_object_unref(tex);
+    gtk_image_set_pixel_size(GTK_IMAGE(img), pixel_size);
+    return img;
 }
 
 /* ─── Log helpers (main-thread idle callbacks) ───────────────────────────── */
@@ -413,11 +433,12 @@ static void build_uninst_window(Uninst *s)
     gtk_widget_set_margin_top(hdr, 10);
     gtk_widget_set_margin_bottom(hdr, 10);
 
-    GtkWidget *logo;
-    if (s->src_ico) {
+    GtkWidget *logo = NULL;
+    if (s->src_ico)
         logo = gtk_image_new_from_file(s->src_ico);
-        gtk_image_set_pixel_size(GTK_IMAGE(logo), 64);
-    } else {
+    if (!logo)
+        logo = make_logo_from_embedded(64);
+    if (!logo) {
         logo = gtk_image_new_from_icon_name("edit-delete");
         gtk_image_set_pixel_size(GTK_IMAGE(logo), 64);
     }

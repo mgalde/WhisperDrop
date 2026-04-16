@@ -2,6 +2,9 @@
 #include "worker.h"
 #include "updater.h"
 #include <glib/gstdio.h>
+#include <libsoup/soup.h>
+#include <json-glib/json-glib.h>
+#include <pango/pango.h>
 #include <stdarg.h>
 #include <string.h>
 #include <unistd.h>
@@ -551,13 +554,67 @@ static void on_about_activated(GSimpleAction *action, GVariant *param, gpointer 
     gtk_about_dialog_set_website      (GTK_ABOUT_DIALOG(dlg), APP_WEBSITE);
     gtk_about_dialog_set_website_label(GTK_ABOUT_DIALOG(dlg), "saguarosec.com");
 
-    /* Credits tab — author with clickable mailto: email */
+    /* Credits tab — author */
     const gchar *authors[] = { APP_AUTHOR " <" APP_EMAIL ">", NULL };
     gtk_about_dialog_set_authors(GTK_ABOUT_DIALOG(dlg), authors);
 
-    /* Credits tab — GitHub as a dedicated section */
+    /* Credits tab — GitHub */
     const gchar *github[] = { APP_GITHUB, NULL };
     gtk_about_dialog_add_credit_section(GTK_ABOUT_DIALOG(dlg), "GitHub", github);
+
+    /* Credits tab — coding assistant */
+    const gchar *assistants[] = {
+        "Claude Code by Anthropic",
+        "https://claude.ai/code",
+        NULL
+    };
+    gtk_about_dialog_add_credit_section(GTK_ABOUT_DIALOG(dlg),
+                                        "Coding Assistant", assistants);
+
+    /* Credits tab — open source libraries (versions from compile-time macros) */
+    gchar *lib_gtk   = g_strdup_printf(
+        "GTK %d.%d.%d \u2014 GUI Toolkit",
+        GTK_MAJOR_VERSION, GTK_MINOR_VERSION, GTK_MICRO_VERSION);
+    gchar *lib_glib  = g_strdup_printf(
+        "GLib %d.%d.%d \u2014 Core Utility Library",
+        GLIB_MAJOR_VERSION, GLIB_MINOR_VERSION, GLIB_MICRO_VERSION);
+    gchar *lib_pango = g_strdup_printf(
+        "Pango %d.%d.%d \u2014 Text Layout & Rendering",
+        PANGO_VERSION_MAJOR, PANGO_VERSION_MINOR, PANGO_VERSION_MICRO);
+    gchar *lib_soup  = g_strdup_printf(
+        "libsoup %d.%d.%d \u2014 HTTP & Networking",
+        SOUP_MAJOR_VERSION, SOUP_MINOR_VERSION, SOUP_MICRO_VERSION);
+    gchar *lib_json  = g_strdup_printf(
+        "json-glib %d.%d.%d \u2014 JSON Parsing",
+        JSON_MAJOR_VERSION, JSON_MINOR_VERSION, JSON_MICRO_VERSION);
+
+    const gchar *libraries[] = {
+        /* Runtime — no compile-time version available */
+        "openai-whisper \u2014 Transcription Engine (runtime)",
+        "https://github.com/openai/whisper",
+        /* Compile-time linked libraries */
+        lib_gtk,
+        "https://gtk.org",
+        lib_glib,
+        "https://docs.gtk.org/glib/",
+        lib_pango,
+        "https://pango.gnome.org",
+        lib_soup,
+        "https://gitlab.gnome.org/GNOME/libsoup",
+        lib_json,
+        "https://gitlab.gnome.org/GNOME/json-glib",
+        /* Runtime — no compile-time version available */
+        "FFmpeg \u2014 Audio/Video Decoding (runtime)",
+        "https://ffmpeg.org",
+        NULL
+    };
+    gtk_about_dialog_add_credit_section(GTK_ABOUT_DIALOG(dlg),
+                                        "Open Source Libraries", libraries);
+    g_free(lib_gtk);
+    g_free(lib_glib);
+    g_free(lib_pango);
+    g_free(lib_soup);
+    g_free(lib_json);
 
     GdkTexture *tex = gdk_texture_new_from_resource(ICON_RESOURCE);
     if (tex) {

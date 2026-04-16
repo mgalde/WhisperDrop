@@ -1,7 +1,7 @@
 # WhisperDrop
 
 <p align="center">
-  <img src="WhisperDrop.png" alt="WhisperDrop" width="720"/>
+  <img src="WhisperDrop.png" alt="WhisperDrop" width="200"/>
 </p>
 
 <p align="center">

@@ -32,7 +32,10 @@ executable('whisperdrop-installer',
   install : false)
 
 executable('whisperdrop-uninstaller',
-  sources : ['whisperdrop-uninstaller.c'],
+  sources : [
+    'whisperdrop-uninstaller.c',
+    embedded_ico_c,
+  ],
   dependencies : [gtk4_dep],
   c_args : installer_c_args,
   install : false)
