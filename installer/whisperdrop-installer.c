@@ -11,7 +11,12 @@
 #include <glib/gstdio.h>
 #include <gio/gio.h>
 #include <string.h>
+#ifdef G_OS_WIN32
+#include <windows.h>
+#include <io.h>
+#else
 #include <unistd.h>
+#endif
 
 /* ─── Embedded assets (generated at build time by embed_binary.py) ───────── */
 
@@ -24,9 +29,21 @@ extern const size_t        whisperdrop_icon_len;
 
 #define WIN_W  620
 #define WIN_H  480
-#define N_DEPS 5
 
 typedef enum { DEP_PENDING = 0, DEP_OK, DEP_MISSING } DepSt;
+
+#ifdef G_OS_WIN32
+/* Windows: check Python, FFmpeg, and Whisper only.
+   GTK4 and its friends are bundled with the MSYS2 runtime. */
+#define N_DEPS 3
+static const struct { const char *label; const char *exe; } DEPS[N_DEPS] = {
+    { "Python interpreter",             "python"  },
+    { "Audio decoder (FFmpeg)",         "ffmpeg"  },
+    { "Transcription engine (Whisper)", "whisper" },
+};
+#else
+/* Linux: check FFmpeg, Whisper, GTK4, libsoup3, json-glib */
+#define N_DEPS 5
 typedef enum {
     PKG_UNKNOWN = 0,
     PKG_APT,      /* Debian / Ubuntu / Mint            */
@@ -34,6 +51,7 @@ typedef enum {
     PKG_PACMAN,   /* Arch / Manjaro / CachyOS           */
     PKG_ZYPPER    /* openSUSE                           */
 } PkgMgr;
+#endif
 
 /* ─── Forward declarations ───────────────────────────────────────────────── */
 
@@ -44,7 +62,9 @@ static void  update_buttons(Inst *s);
 static void  start_dep_check(Inst *s);
 static void  start_install  (Inst *s);
 static void  show_error     (GtkWindow *p, const char *title, const char *body);
+#ifndef G_OS_WIN32
 static void  show_manual_install(GtkWindow *p);
+#endif
 
 /* ─── State struct ───────────────────────────────────────────────────────── */
 
@@ -75,7 +95,9 @@ struct Inst {
     GtkTextView    *inst_view;
 
     /* Runtime */
+#ifndef G_OS_WIN32
     PkgMgr  pkgmgr;
+#endif
     gchar  *src_bin;   /* path to WhisperDrop binary  */
     gchar  *src_ico;   /* path to WhisperDrop.png     */
 };
@@ -116,6 +138,7 @@ static const char MIT_LICENSE[] =
     "If you read this far and like this software, feel free to reach out to\n"
     "WhisperDrop@saguarosec.com \342\200\224 we\342\200\231d love to hear from you!";
 
+#ifndef G_OS_WIN32
 static const struct {
     const char *label;
     const char *exe;   /* non-NULL → check with g_find_program_in_path */
@@ -139,9 +162,11 @@ static const char *PKG_NAMES[N_DEPS][4] = {
     /* soup3   */ { "libsoup-3.0-0",       "libsoup3",   "libsoup3", "libsoup3-0"          },
     /* json-gl */ { "libjson-glib-1.0-0",  "json-glib",  "json-glib","libjson-glib-1_0-0"  },
 };
+#endif /* !G_OS_WIN32 */
 
 /* ─── Utility helpers ────────────────────────────────────────────────────── */
 
+#ifndef G_OS_WIN32
 static gboolean lib_exists(const char *libname)
 {
     static const char *dirs[] = {
@@ -202,16 +227,25 @@ static PkgMgr detect_pkg(void)
     g_free(like);
     return r;
 }
+#endif /* !G_OS_WIN32 */
 
 /* Return the directory containing this executable (caller must g_free). */
 static gchar *get_exe_dir(void)
 {
+#ifdef G_OS_WIN32
+    wchar_t wbuf[4096] = {0};
+    char    buf[4096]  = {0};
+    GetModuleFileNameW(NULL, wbuf, G_N_ELEMENTS(wbuf) - 1);
+    WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, buf, sizeof(buf), NULL, NULL);
+    if (buf[0]) return g_path_get_dirname(buf);
+#else
     char buf[4096];
     ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (n > 0) {
         buf[n] = '\0';
         return g_path_get_dirname(buf);
     }
+#endif
     return g_get_current_dir();
 }
 
@@ -336,6 +370,7 @@ static void on_manual_response(GtkDialog *d, int r, gpointer ud)
     gtk_window_destroy(GTK_WINDOW(d));
 }
 
+#ifndef G_OS_WIN32
 static void show_manual_install(GtkWindow *parent)
 {
     GtkWidget *d = gtk_message_dialog_new(
@@ -359,6 +394,7 @@ static void show_manual_install(GtkWindow *parent)
     g_signal_connect(d, "response", G_CALLBACK(on_manual_response), NULL);
     gtk_window_present(GTK_WINDOW(d));
 }
+#endif /* !G_OS_WIN32 (show_manual_install) */
 
 /* ─── Navigation ─────────────────────────────────────────────────────────── */
 
@@ -428,8 +464,13 @@ static void on_launch(GtkButton *b, gpointer ud)
 {
     (void)b;
     Inst *s = ud;
+#ifdef G_OS_WIN32
+    gchar *bin = g_build_filename(g_get_user_data_dir(), "WhisperDrop",
+                                  "WhisperDrop.exe", NULL);
+#else
     gchar *bin = g_build_filename(g_get_home_dir(), ".local", "bin",
                                   "WhisperDrop", NULL);
+#endif
     GError *e = NULL;
     if (!g_spawn_command_line_async(bin, &e)) {
         show_error(s->window, "Could not launch WhisperDrop",
@@ -498,6 +539,14 @@ static void dep_thread_fn(GTask *task, gpointer src_obj, gpointer td,
 
     for (int i = 0; i < N_DEPS; i++) {
         DepSt st;
+#ifdef G_OS_WIN32
+        /* On Windows, try both "python" and "python3" for the interpreter */
+        gchar *p = g_find_program_in_path(DEPS[i].exe);
+        if (!p && i == 0)
+            p = g_find_program_in_path("python3");
+        st = p ? DEP_OK : DEP_MISSING;
+        g_free(p);
+#else
         if (DEPS[i].exe) {
             gchar *p = g_find_program_in_path(DEPS[i].exe);
             st = p ? DEP_OK : DEP_MISSING;
@@ -505,6 +554,7 @@ static void dep_thread_fn(GTask *task, gpointer src_obj, gpointer td,
         } else {
             st = lib_exists(DEPS[i].lib) ? DEP_OK : DEP_MISSING;
         }
+#endif
         s->dep_st[i] = st;
         if (st == DEP_MISSING) any = TRUE;
 
@@ -592,9 +642,11 @@ static gboolean done_cb(gpointer data)
         gtk_widget_set_sensitive(GTK_WIDGET(m->s->btn_back), TRUE);
         m->s->cur = 3; /* stay on install page */
 
+#ifndef G_OS_WIN32
         if (m->manual_install)
             show_manual_install(m->s->window);
         else
+#endif
             show_error(m->s->window,
                 m->et ? m->et : "Something went wrong",
                 m->eb ? m->eb
@@ -657,6 +709,186 @@ static void fail_install(Inst *s, GTask *task,
     g_idle_add(done_cb, m);
     g_task_return_boolean(task, FALSE);
 }
+
+#ifdef G_OS_WIN32
+static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
+                               GCancellable *cancel)
+{
+    (void)src_obj; (void)cancel;
+    Inst *s = td;
+    GError *err = NULL;
+
+    emit_log(s, "Starting installation\xe2\x80\xa6", 0.02);
+
+    /* ── Step 0: Clean up any previous installation ──────────────────── */
+    const char *rel_paths[] = {
+        "WhisperDrop\\WhisperDrop.exe",
+        "WhisperDrop\\WhisperDrop.png",
+        NULL
+    };
+    for (int i = 0; rel_paths[i]; i++) {
+        gchar *p = g_build_filename(g_get_user_data_dir(), rel_paths[i], NULL);
+        if (g_file_test(p, G_FILE_TEST_EXISTS)) {
+            GFile *f = g_file_new_for_path(p);
+            g_file_delete(f, NULL, NULL);
+            g_object_unref(f);
+        }
+        g_free(p);
+    }
+    emit_log(s, "Ready to install.", 0.08);
+
+    /* ── Step 1: Python required — bail if missing ───────────────────── */
+    if (s->dep_st[0] == DEP_MISSING) {
+        fail_install(s, task, FALSE,
+            "Python is required",
+            "WhisperDrop needs Python to run the Whisper transcription engine.\n\n"
+            "Download and install Python from https://www.python.org/downloads/\n\n"
+            "Make sure to check \xe2\x80\x9cAdd Python to PATH\xe2\x80\x9d during installation, "
+            "then run this installer again.");
+        return;
+    }
+
+    /* ── Step 2: FFmpeg required — bail if missing ───────────────────── */
+    if (s->dep_st[1] == DEP_MISSING) {
+        fail_install(s, task, FALSE,
+            "FFmpeg is required",
+            "FFmpeg is needed to decode audio and video files.\n\n"
+            "Install it with winget (if available):\n"
+            "    winget install Gyan.FFmpeg\n\n"
+            "Or download it from https://ffmpeg.org/download.html and add it to your PATH,\n"
+            "then run this installer again.");
+        return;
+    }
+
+    /* ── Step 3: Install Whisper via pip (if missing) ────────────────── */
+    if (s->dep_st[2] == DEP_MISSING) {
+        emit_log(s,
+            "Installing Whisper transcription engine "
+            "\xe2\x80\x94 this may take a minute\xe2\x80\xa6",
+            0.30);
+
+        /* Try "python -m pip" first (most reliable on Windows) */
+        const char *pip1[] = { "python", "-m", "pip", "install", "-U",
+                                "openai-whisper", NULL };
+        if (!run_cmd_log(s, pip1, &err)) {
+            g_clear_error(&err);
+            emit_log(s, "Trying pip3\xe2\x80\xa6", -1);
+            const char *pip2[] = { "pip", "install", "-U", "openai-whisper", NULL };
+            if (!run_cmd_log(s, pip2, &err)) {
+                gchar *body = g_strdup_printf(
+                    "Could not install the Whisper transcription engine.\n\n"
+                    "You can install it manually by running:\n"
+                    "    python -m pip install -U openai-whisper\n\n"
+                    "Details: %s", err ? err->message : "unknown error");
+                g_clear_error(&err);
+                fail_install(s, task, FALSE, "Failed to install Whisper", body);
+                g_free(body);
+                return;
+            }
+        }
+        emit_log(s, "Whisper installed successfully.", -1);
+    } else {
+        emit_log(s, "Transcription engine: already installed.", -1);
+    }
+
+    /* ── Step 4: Install binary to %LOCALAPPDATA%\WhisperDrop\ ──────── */
+    emit_log(s, "Installing WhisperDrop\xe2\x80\xa6", 0.60);
+
+    gchar *inst_dir = g_build_filename(g_get_user_data_dir(), "WhisperDrop", NULL);
+    g_mkdir_with_parents(inst_dir, 0755);
+    gchar *dest_bin = g_build_filename(inst_dir, "WhisperDrop.exe", NULL);
+
+    gboolean cp_ok = FALSE;
+    if (s->src_bin) {
+        GFile *fsrc = g_file_new_for_path(s->src_bin);
+        GFile *fdst = g_file_new_for_path(dest_bin);
+        cp_ok = g_file_copy(fsrc, fdst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, &err);
+        g_object_unref(fsrc);
+        g_object_unref(fdst);
+    } else {
+        gchar *tmp = extract_embedded_binary();
+        if (tmp) {
+            GFile *fsrc = g_file_new_for_path(tmp);
+            GFile *fdst = g_file_new_for_path(dest_bin);
+            cp_ok = g_file_copy(fsrc, fdst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, &err);
+            g_object_unref(fsrc);
+            g_object_unref(fdst);
+            g_unlink(tmp);
+            g_free(tmp);
+        } else {
+            err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_FAILED,
+                "Could not extract embedded application data.");
+        }
+    }
+
+    if (!cp_ok) {
+        gchar *body = g_strdup_printf(
+            "Could not install the application to:\n%s\n\n"
+            "Check that you have write access and try again.\n\nDetails: %s",
+            inst_dir, err ? err->message : "unknown error");
+        g_clear_error(&err);
+        g_free(dest_bin);
+        g_free(inst_dir);
+        fail_install(s, task, FALSE, "Could not install WhisperDrop", body);
+        g_free(body);
+        return;
+    }
+    g_free(dest_bin);
+    emit_log(s, "WhisperDrop installed successfully.", 0.75);
+
+    /* ── Step 5: Write icon ───────────────────────────────────────────── */
+    gchar *dest_ico = g_build_filename(inst_dir, "WhisperDrop.png", NULL);
+    if (s->src_ico) {
+        GFile *isrc = g_file_new_for_path(s->src_ico);
+        GFile *idst = g_file_new_for_path(dest_ico);
+        g_file_copy(isrc, idst, G_FILE_COPY_OVERWRITE, NULL, NULL, NULL, NULL);
+        g_object_unref(isrc);
+        g_object_unref(idst);
+    } else {
+        g_file_set_contents(dest_ico,
+            (const gchar *)whisperdrop_icon,
+            (gssize)whisperdrop_icon_len, NULL);
+    }
+    g_free(dest_ico);
+
+    /* ── Step 6: Create Start Menu shortcut via PowerShell ───────────── */
+    emit_log(s, "Creating Start Menu shortcut\xe2\x80\xa6", 0.88);
+
+    /* Use environment-variable-based paths to avoid quoting issues */
+    const char *ps_cmd[] = {
+        "powershell", "-NoProfile", "-Command",
+        "$s = New-Object -ComObject WScript.Shell; "
+        "$lnk = $s.CreateShortcut("
+            "[System.IO.Path]::Combine($env:APPDATA, 'Microsoft', 'Windows', "
+            "'Start Menu', 'Programs', 'WhisperDrop.lnk')); "
+        "$lnk.TargetPath = [System.IO.Path]::Combine("
+            "$env:LOCALAPPDATA, 'WhisperDrop', 'WhisperDrop.exe'); "
+        "$lnk.WorkingDirectory = [System.IO.Path]::Combine("
+            "$env:LOCALAPPDATA, 'WhisperDrop'); "
+        "$lnk.Description = 'WhisperDrop - Audio/Video Transcription'; "
+        "$lnk.Save()",
+        NULL
+    };
+    if (!run_cmd_log(s, ps_cmd, &err)) {
+        /* Non-fatal — app still works, shortcut just won't be in Start Menu */
+        emit_log(s, "Note: could not create Start Menu shortcut (non-fatal).", -1);
+        g_clear_error(&err);
+    } else {
+        emit_log(s, "Start Menu shortcut created.", -1);
+    }
+
+    g_free(inst_dir);
+
+    emit_log(s, "Installation complete!", 1.00);
+
+    DoneMsg *dm = g_new0(DoneMsg, 1);
+    dm->s  = s;
+    dm->ok = TRUE;
+    g_idle_add(done_cb, dm);
+    g_task_return_boolean(task, TRUE);
+}
+
+#else  /* Linux install_thread_fn */
 
 static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
                                GCancellable *cancel)
@@ -979,9 +1211,13 @@ static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
     g_task_return_boolean(task, TRUE);
 }
 
+#endif /* G_OS_WIN32 / Linux install_thread_fn */
+
 static void start_install(Inst *s)
 {
+#ifndef G_OS_WIN32
     s->pkgmgr = detect_pkg();
+#endif
 
     GTask *t = g_task_new(NULL, NULL, NULL, NULL);
     g_task_set_task_data(t, s, NULL);
@@ -1002,6 +1238,18 @@ static GtkWidget *build_welcome(void)
     gtk_widget_set_vexpand(box, TRUE);
 
     GtkWidget *lbl = gtk_label_new(
+#ifdef G_OS_WIN32
+        "WhisperDrop turns your audio and video files into text \xe2\x80\x94 "
+        "just drag and drop them onto the window. "
+        "Everything runs on your computer; nothing is sent to the cloud.\n\n"
+        "This installer will:\n"
+        "  \xe2\x80\xa2  Check that Python and FFmpeg are installed\n"
+        "  \xe2\x80\xa2  Install the Whisper transcription engine automatically\n"
+        "  \xe2\x80\xa2  Copy WhisperDrop to your user profile\n"
+        "  \xe2\x80\xa2  Add WhisperDrop to your Start Menu\n\n"
+        "Python and FFmpeg must be installed before running this installer.\n"
+        "No administrator password is required."
+#else
         "WhisperDrop turns your audio and video files into text \xe2\x80\x94 "
         "just drag and drop them onto the window. "
         "Everything runs on your computer; nothing is sent to the cloud.\n\n"
@@ -1009,7 +1257,9 @@ static GtkWidget *build_welcome(void)
         "  \xe2\x80\xa2  Check that your system has everything WhisperDrop needs\n"
         "  \xe2\x80\xa2  Install any missing pieces automatically\n"
         "  \xe2\x80\xa2  Add WhisperDrop to your Applications menu\n\n"
-        "You may be asked for your password once to install system software.");
+        "You may be asked for your password once to install system software."
+#endif
+    );
     gtk_label_set_wrap(GTK_LABEL(lbl), TRUE);
     gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
     gtk_widget_set_hexpand(lbl, TRUE);
@@ -1163,9 +1413,16 @@ static GtkWidget *build_finish(void)
     gtk_box_append(GTK_BOX(box), heading);
 
     GtkWidget *body = gtk_label_new(
+#ifdef G_OS_WIN32
+        "You can now find WhisperDrop in your Start Menu.\n\n"
+        "Drag and drop any audio or video file onto it to get a text "
+        "transcript \xe2\x80\x94 no cloud, no subscription, no command line."
+#else
         "You can now find WhisperDrop in your Applications menu.\n\n"
         "Drag and drop any audio or video file onto it to get a text "
-        "transcript \xe2\x80\x94 no cloud, no subscription, no command line.");
+        "transcript \xe2\x80\x94 no cloud, no subscription, no command line."
+#endif
+    );
     gtk_label_set_wrap(GTK_LABEL(body), TRUE);
     gtk_label_set_xalign(GTK_LABEL(body), 0.0f);
     gtk_box_append(GTK_BOX(box), body);

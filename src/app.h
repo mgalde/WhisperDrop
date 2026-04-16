@@ -73,7 +73,10 @@ struct _AppState {
     GThread  *worker_thread;
     GMutex    worker_mutex;
     gboolean  cancel_requested;
-    GPid      current_pid;
+    GPid      current_pid;      /* Linux/macOS: subprocess pid    */
+#ifdef G_OS_WIN32
+    GSubprocess *current_proc;  /* Windows: subprocess for cancel */
+#endif
 
     /* Status heartbeat */
     guint    status_timer_id;
