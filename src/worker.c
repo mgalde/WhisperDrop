@@ -1,10 +1,12 @@
 #include "worker.h"
 #include <glib/gstdio.h>
+#include <stdio.h>
+#include <string.h>
+#ifndef G_OS_WIN32
 #include <unistd.h>
 #include <signal.h>
 #include <sys/wait.h>
-#include <stdio.h>
-#include <string.h>
+#endif
 
 /* ==========================================================
    Message types posted to the main thread via g_idle_add
@@ -245,7 +247,60 @@ static gpointer worker_thread_func(gpointer data) {
 
         send_progress(app, (gdouble)idx / (gdouble)total);
 
-        /* Create pipe — child stdout AND stderr both go to the read end */
+        gboolean was_cancelled = FALSE;
+        gboolean job_ok        = FALSE;
+        int      exit_code     = 1;
+
+#ifdef G_OS_WIN32
+        /* ── Windows: GSubprocessLauncher merges stderr into stdout ──────── */
+        GError             *spawn_err = NULL;
+        GSubprocessLauncher *launcher = g_subprocess_launcher_new(
+            G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_MERGE);
+        /* PYTHONUNBUFFERED=1 — flush each line immediately, not block-buffered */
+        g_subprocess_launcher_setenv(launcher, "PYTHONUNBUFFERED", "1", TRUE);
+        GSubprocess *subproc = g_subprocess_launcher_spawnv(
+            launcher, (const gchar * const *)argv->pdata, &spawn_err);
+        g_object_unref(launcher);
+
+        g_ptr_array_free(argv, TRUE);
+        if (extra_argv) g_strfreev(extra_argv);
+
+        if (!subproc) {
+            send_log(app, "\u2716 Failed to start whisper: %s\n", spawn_err->message);
+            send_job_update(app, idx, JOB_ERROR, NULL, spawn_err->message);
+            g_error_free(spawn_err);
+            g_free(out_dir);
+            continue;
+        }
+
+        /* Store subprocess so worker_cancel can terminate it */
+        g_mutex_lock(&app->worker_mutex);
+        app->current_proc = subproc;
+        g_mutex_unlock(&app->worker_mutex);
+
+        /* Stream combined stdout+stderr line-by-line */
+        GDataInputStream *dis = g_data_input_stream_new(
+            g_subprocess_get_stdout_pipe(subproc));
+        gchar *line;
+        while ((line = g_data_input_stream_read_line(dis, NULL, NULL, NULL)) != NULL) {
+            send_log(app, "%s\n", line);
+            g_free(line);
+        }
+        g_object_unref(dis);
+
+        g_subprocess_wait(subproc, NULL, NULL);
+        job_ok    = g_subprocess_get_successful(subproc);
+        exit_code = g_subprocess_get_exit_status(subproc);
+
+        g_mutex_lock(&app->worker_mutex);
+        app->current_proc = NULL;
+        was_cancelled     = app->cancel_requested;
+        g_mutex_unlock(&app->worker_mutex);
+
+        g_object_unref(subproc);
+
+#else  /* POSIX (Linux / macOS) */
+        /* ── POSIX: pipe + g_spawn_async_with_fds ────────────────────────── */
         int pipefd[2];
         if (pipe(pipefd) != 0) {
             send_log(app, "\u2716 Failed to create pipe.\n");
@@ -256,23 +311,15 @@ static gpointer worker_thread_func(gpointer data) {
             continue;
         }
 
-        /* Spawn — pass PYTHONUNBUFFERED=1 so Python flushes each line
-           immediately instead of block-buffering when writing to a pipe. */
+        /* PYTHONUNBUFFERED=1 — flush each line immediately, not block-buffered */
         gchar  **envp      = g_get_environ();
         envp               = g_environ_setenv(envp, "PYTHONUNBUFFERED", "1", TRUE);
         GError  *spawn_err = NULL;
         GPid     pid;
         gboolean spawned   = g_spawn_async_with_fds(
-            NULL,
-            (gchar **)argv->pdata,
-            envp,
-            G_SPAWN_DO_NOT_REAP_CHILD,
-            NULL, NULL,
-            &pid,
-            -1,          /* stdin: inherit */
-            pipefd[1],   /* stdout → pipe */
-            pipefd[1],   /* stderr → same pipe (merged) */
-            &spawn_err);
+            NULL, (gchar **)argv->pdata, envp,
+            G_SPAWN_DO_NOT_REAP_CHILD, NULL, NULL, &pid,
+            -1, pipefd[1], pipefd[1], &spawn_err);
         g_strfreev(envp);
 
         close(pipefd[1]);  /* parent closes the write end */
@@ -288,45 +335,46 @@ static gpointer worker_thread_func(gpointer data) {
             continue;
         }
 
-        /* Store PID so the main thread can SIGTERM it on cancel */
+        /* Store PID so worker_cancel can SIGTERM it */
         g_mutex_lock(&app->worker_mutex);
         app->current_pid = pid;
         g_mutex_unlock(&app->worker_mutex);
 
-        /* Stream output line-by-line (blocking).
-           When the child exits (including on SIGTERM from worker_cancel),
-           its stdout pipe closes and fgets returns NULL naturally. */
+        /* Stream output line-by-line; pipe closes naturally when child exits */
         FILE *stream = fdopen(pipefd[0], "r");
         if (stream) {
-            char line[4096];
-            while (fgets(line, sizeof(line), stream) != NULL) {
-                size_t len = strlen(line);
-                if (len > 0 && line[len - 1] == '\n') line[len - 1] = '\0';
-                send_log(app, "%s\n", line);
+            char linebuf[4096];
+            while (fgets(linebuf, sizeof(linebuf), stream) != NULL) {
+                size_t slen = strlen(linebuf);
+                if (slen > 0 && linebuf[slen - 1] == '\n') linebuf[slen - 1] = '\0';
+                send_log(app, "%s\n", linebuf);
             }
-            fclose(stream);   /* also closes pipefd[0] */
+            fclose(stream);
         } else {
             close(pipefd[0]);
         }
 
-        /* Wait for the process and collect exit status */
         int wstatus = 0;
         waitpid((pid_t)pid, &wstatus, 0);
         g_spawn_close_pid(pid);
 
         g_mutex_lock(&app->worker_mutex);
-        app->current_pid  = 0;
-        gboolean was_cancelled = app->cancel_requested;
+        app->current_pid = 0;
+        was_cancelled    = app->cancel_requested;
         g_mutex_unlock(&app->worker_mutex);
+
+        job_ok    = WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0;
+        exit_code = WEXITSTATUS(wstatus);
+#endif /* G_OS_WIN32 */
 
         if (was_cancelled) {
             send_job_update(app, idx, JOB_CANCELLED, NULL, NULL);
             send_log(app, "\u23F9 Cancelled.\n");
-        } else if (WIFEXITED(wstatus) && WEXITSTATUS(wstatus) == 0) {
+        } else if (job_ok) {
             send_job_update(app, idx, JOB_DONE, out_dir, NULL);
             send_log(app, "\u2713 Done.\n");
         } else {
-            gchar *errmsg = g_strdup_printf("whisper exited with code %d", WEXITSTATUS(wstatus));
+            gchar *errmsg = g_strdup_printf("whisper exited with code %d", exit_code);
             send_log(app, "\u2716 Error: %s\n", errmsg);
             send_job_update(app, idx, JOB_ERROR, NULL, errmsg);
             g_free(errmsg);
@@ -374,7 +422,12 @@ void worker_start(AppState *app) {
 void worker_cancel(AppState *app) {
     g_mutex_lock(&app->worker_mutex);
     app->cancel_requested = TRUE;
+#ifdef G_OS_WIN32
+    if (app->current_proc)
+        g_subprocess_force_exit(app->current_proc);  /* requires GLib >= 2.74 */
+#else
     if (app->current_pid > 0)
         kill((pid_t)app->current_pid, SIGTERM);
+#endif
     g_mutex_unlock(&app->worker_mutex);
 }

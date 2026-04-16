@@ -1,11 +1,18 @@
 #include "updater.h"
 #include <libsoup/soup.h>
 #include <json-glib/json-glib.h>
-#include <unistd.h>
-#include <sys/stat.h>
+#include <glib/gstdio.h>
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef G_OS_WIN32
+#include <windows.h>
+#include <io.h>       /* write(), close() */
+#include <sys/types.h>
+#else
+#include <unistd.h>
+#include <sys/stat.h>
+#endif
 
 /* ==========================================================
    Version comparison
@@ -30,8 +37,16 @@ static gboolean version_newer(const gchar *latest, const gchar *current) {
    ========================================================== */
 
 static void apply_update(AppState *app, const gchar *tmp_path, const gchar *version) {
-    char exe_buf[4096] = {0};
-    ssize_t len = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
+#ifdef G_OS_WIN32
+    /* Windows: running .exe files are locked; the installer handles updates.
+       This path is never reached (pick_asset_url returns NULL on Windows,
+       so is_direct is always FALSE and start_download is never called). */
+    (void)tmp_path; (void)version;
+    g_unlink(tmp_path);
+    return;
+#else
+    char    exe_buf[4096] = {0};
+    ssize_t len           = readlink("/proc/self/exe", exe_buf, sizeof(exe_buf) - 1);
     if (len <= 0) {
         GtkWidget *dlg = gtk_message_dialog_new(
             GTK_WINDOW(app->window), GTK_DIALOG_MODAL,
@@ -45,7 +60,7 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
     }
     exe_buf[len] = '\0';
 
-    chmod(tmp_path, 0755);
+    g_chmod(tmp_path, 0755);
 
     gboolean replaced  = (rename(tmp_path, exe_buf) == 0);
     int      ren_errno = errno;
@@ -55,7 +70,7 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
            Stage a copy inside the binary's own directory, then rename atomically. */
         gchar *exe_dir = g_path_get_dirname(exe_buf);
         gchar *stage   = g_strdup_printf("%s/.whisperdrop-update-XXXXXX", exe_dir);
-        int    sfd     = mkstemp(stage);
+        int    sfd     = g_mkstemp(stage);
         g_free(exe_dir);
         if (sfd >= 0) {
             close(sfd);
@@ -65,16 +80,16 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
             if (g_file_copy(src, dst,
                     G_FILE_COPY_OVERWRITE | G_FILE_COPY_NOFOLLOW_SYMLINKS,
                     NULL, NULL, NULL, &ce)) {
-                chmod(stage, 0755);
+                g_chmod(stage, 0755);
                 replaced = (rename(stage, exe_buf) == 0);
             }
             if (ce) g_error_free(ce);
             g_object_unref(src);
             g_object_unref(dst);
-            if (!replaced) unlink(stage);
+            if (!replaced) g_unlink(stage);
         }
         g_free(stage);
-        unlink(tmp_path);   /* original temp cleaned up either way */
+        g_unlink(tmp_path);   /* original temp cleaned up either way */
     }
 
     if (!replaced) {
@@ -86,7 +101,7 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
             "Or download the update manually.", exe_buf);
         gtk_window_present(GTK_WINDOW(dlg));
         g_signal_connect(dlg, "response", G_CALLBACK(gtk_window_destroy), NULL);
-        if (ren_errno != EXDEV) unlink(tmp_path);   /* EXDEV path already cleaned up */
+        if (ren_errno != EXDEV) g_unlink(tmp_path);   /* EXDEV path already cleaned up */
         return;
     }
 
@@ -97,6 +112,7 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
         "Please restart the app to use the new version.", version);
     gtk_window_present(GTK_WINDOW(dlg));
     g_signal_connect(dlg, "response", G_CALLBACK(gtk_window_destroy), NULL);
+#endif /* !G_OS_WIN32 */
 }
 
 /* ==========================================================
@@ -240,6 +256,13 @@ static void on_update_dialog_response(GtkDialog *dlg, int response, gpointer dat
  *   2. Must not be a Windows (.exe), macOS (.dmg), or archive (.zip/.tar*) file.
  *   3. Take the first asset whose name starts with "WhisperDrop-" and passes. */
 static gchar *pick_asset_url(JsonArray *assets) {
+#ifdef G_OS_WIN32
+    /* On Windows, running .exe files are locked so self-update is not possible.
+       Return NULL so the update dialog opens the GitHub releases page in the
+       browser, letting the user download and run the installer manually. */
+    (void)assets;
+    return NULL;
+#endif
     guint n = json_array_get_length(assets);
     for (guint i = 0; i < n; i++) {
         JsonObject  *asset = json_array_get_object_element(assets, i);
