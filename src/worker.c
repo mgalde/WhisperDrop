@@ -256,13 +256,16 @@ static gpointer worker_thread_func(gpointer data) {
             continue;
         }
 
-        /* Spawn */
+        /* Spawn — pass PYTHONUNBUFFERED=1 so Python flushes each line
+           immediately instead of block-buffering when writing to a pipe. */
+        gchar  **envp      = g_get_environ();
+        envp               = g_environ_setenv(envp, "PYTHONUNBUFFERED", "1", TRUE);
         GError  *spawn_err = NULL;
         GPid     pid;
         gboolean spawned   = g_spawn_async_with_fds(
             NULL,
             (gchar **)argv->pdata,
-            NULL,
+            envp,
             G_SPAWN_DO_NOT_REAP_CHILD,
             NULL, NULL,
             &pid,
@@ -270,6 +273,7 @@ static gpointer worker_thread_func(gpointer data) {
             pipefd[1],   /* stdout → pipe */
             pipefd[1],   /* stderr → same pipe (merged) */
             &spawn_err);
+        g_strfreev(envp);
 
         close(pipefd[1]);  /* parent closes the write end */
         g_ptr_array_free(argv, TRUE);

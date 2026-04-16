@@ -61,8 +61,9 @@ AppState *app_state_new(void) {
     AppState *app    = g_new0(AppState, 1);
     app->jobs        = g_ptr_array_new_with_free_func((GDestroyNotify)job_free);
     g_mutex_init(&app->worker_mutex);
-    app->keyfile     = g_key_file_new();
-    app->settings_path = make_settings_path();
+    app->keyfile        = g_key_file_new();
+    app->settings_path  = make_settings_path();
+    app->update_cancel  = g_cancellable_new();
     return app;
 }
 
@@ -72,6 +73,7 @@ void app_state_free(AppState *app) {
     g_mutex_clear(&app->worker_mutex);
     g_key_file_free(app->keyfile);
     g_free(app->settings_path);
+    g_object_unref(app->update_cancel);
     g_free(app);
 }
 
@@ -590,6 +592,9 @@ static gboolean on_close_request(GtkWindow *win, gpointer data) {
         g_thread_join(app->worker_thread);
         app->worker_thread = NULL;
     }
+    /* Cancel any in-flight soup requests so their callbacks don't touch
+       the now-destroyed window widgets. */
+    g_cancellable_cancel(app->update_cancel);
     app_save_settings(app);
     return FALSE;
 }

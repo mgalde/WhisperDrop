@@ -3,6 +3,7 @@
 #include <json-glib/json-glib.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -46,7 +47,37 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
 
     chmod(tmp_path, 0755);
 
-    if (rename(tmp_path, exe_buf) != 0) {
+    gboolean replaced  = (rename(tmp_path, exe_buf) == 0);
+    int      ren_errno = errno;
+
+    if (!replaced && ren_errno == EXDEV) {
+        /* tmp and the binary are on different filesystems (e.g. /tmp is tmpfs).
+           Stage a copy inside the binary's own directory, then rename atomically. */
+        gchar *exe_dir = g_path_get_dirname(exe_buf);
+        gchar *stage   = g_strdup_printf("%s/.whisperdrop-update-XXXXXX", exe_dir);
+        int    sfd     = mkstemp(stage);
+        g_free(exe_dir);
+        if (sfd >= 0) {
+            close(sfd);
+            GFile  *src = g_file_new_for_path(tmp_path);
+            GFile  *dst = g_file_new_for_path(stage);
+            GError *ce  = NULL;
+            if (g_file_copy(src, dst,
+                    G_FILE_COPY_OVERWRITE | G_FILE_COPY_NOFOLLOW_SYMLINKS,
+                    NULL, NULL, NULL, &ce)) {
+                chmod(stage, 0755);
+                replaced = (rename(stage, exe_buf) == 0);
+            }
+            if (ce) g_error_free(ce);
+            g_object_unref(src);
+            g_object_unref(dst);
+            if (!replaced) unlink(stage);
+        }
+        g_free(stage);
+        unlink(tmp_path);   /* original temp cleaned up either way */
+    }
+
+    if (!replaced) {
         GtkWidget *dlg = gtk_message_dialog_new(
             GTK_WINDOW(app->window), GTK_DIALOG_MODAL,
             GTK_MESSAGE_WARNING, GTK_BUTTONS_OK,
@@ -55,7 +86,7 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
             "Or download the update manually.", exe_buf);
         gtk_window_present(GTK_WINDOW(dlg));
         g_signal_connect(dlg, "response", G_CALLBACK(gtk_window_destroy), NULL);
-        unlink(tmp_path);
+        if (ren_errno != EXDEV) unlink(tmp_path);   /* EXDEV path already cleaned up */
         return;
     }
 
@@ -84,6 +115,13 @@ static void on_download_response(GObject *source, GAsyncResult *result, gpointer
 
     GError *err  = NULL;
     GBytes *body = soup_session_send_and_read_finish(session, result, &err);
+
+    /* Silently discard if the window was closed while downloading */
+    if (g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_clear_error(&err);
+        if (body) g_bytes_unref(body);
+        goto cleanup;
+    }
 
     if (err || !body) {
         GtkWidget *dlg = gtk_message_dialog_new(
@@ -116,9 +154,31 @@ static void on_download_response(GObject *source, GAsyncResult *result, gpointer
 
     gsize         data_len = 0;
     const guint8 *data_ptr = g_bytes_get_data(body, &data_len);
-    (void)write(tmp_fd, data_ptr, data_len);
+
+    /* Write in a loop — write(2) can return short on signals or full buffers.
+       A partial write would corrupt the binary being replaced. */
+    gsize    written  = 0;
+    gboolean write_ok = TRUE;
+    while (written < data_len) {
+        ssize_t n = write(tmp_fd, data_ptr + written, data_len - written);
+        if (n <= 0) { write_ok = FALSE; break; }
+        written += (gsize)n;
+    }
     close(tmp_fd);
     g_bytes_unref(body);
+
+    if (!write_ok) {
+        unlink(tmp_path);
+        GtkWidget *dlg = gtk_message_dialog_new(
+            GTK_WINDOW(dd->app->window), GTK_DIALOG_MODAL,
+            GTK_MESSAGE_WARNING, GTK_BUTTONS_OK,
+            "Could not write the downloaded update to disk.\n\n"
+            "Check available disk space and try again.");
+        gtk_window_present(GTK_WINDOW(dlg));
+        g_signal_connect(dlg, "response", G_CALLBACK(gtk_window_destroy), NULL);
+        g_free(tmp_path);
+        goto cleanup;
+    }
 
     apply_update(dd->app, tmp_path, dd->version);
     g_free(tmp_path);
@@ -141,7 +201,7 @@ static void start_download(AppState *app, const gchar *version, const gchar *url
     soup_message_headers_append(soup_message_get_request_headers(msg),
                                 "User-Agent", APP_NAME "/" APP_VERSION);
     soup_session_send_and_read_async(session, msg, G_PRIORITY_DEFAULT,
-                                     NULL, on_download_response, dd);
+                                     dd->app->update_cancel, on_download_response, dd);
     g_object_unref(msg);
 }
 
@@ -187,7 +247,6 @@ static gchar *pick_asset_url(JsonArray *assets) {
         const gchar *url   = json_object_get_string_member(asset, "browser_download_url");
         if (!name || !url || url[0] == '\0') continue;
         /* Skip installer and uninstaller assets */
-        if (g_ascii_strcasecmp(name, "") == 0) continue;
         if (strstr(name, "Installer")   != NULL) continue;
         if (strstr(name, "Uninstaller") != NULL) continue;
         /* Skip non-Linux and archive formats */
@@ -214,6 +273,13 @@ static void on_check_response(GObject *source, GAsyncResult *result, gpointer da
 
     GError *err  = NULL;
     GBytes *body = soup_session_send_and_read_finish(session, result, &err);
+
+    /* Silently discard if the window was closed while the request was in flight */
+    if (g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_clear_error(&err);
+        if (body) g_bytes_unref(body);
+        goto cleanup;
+    }
 
     if (err || !body) {
         if (cd->show_if_current) {
@@ -343,7 +409,7 @@ void updater_check(AppState *app, gboolean show_if_current) {
     soup_message_headers_append(soup_message_get_request_headers(msg),
                                 "User-Agent", APP_NAME "/" APP_VERSION);
     soup_session_send_and_read_async(session, msg, G_PRIORITY_DEFAULT,
-                                     NULL, on_check_response, cd);
+                                     cd->app->update_cancel, on_check_response, cd);
     g_object_unref(msg);
     g_free(api_url);
 }

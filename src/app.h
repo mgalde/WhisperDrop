@@ -3,7 +3,7 @@
 
 /* ---- App metadata ---- */
 #define APP_NAME      "WhisperDrop"
-#define APP_VERSION   "0.6.0"
+#define APP_VERSION   "0.7.0"
 #define APP_AUTHOR    "Michael Galde"
 #define APP_EMAIL     "WhisperDrop@saguarosec.com"
 #define APP_WEBSITE   "https://saguarosec.com/"
@@ -81,7 +81,8 @@ struct _AppState {
     gboolean stop_requested;
 
     /* Update check */
-    gboolean update_checked;
+    gboolean      update_checked;
+    GCancellable *update_cancel;  /* cancelled on window close to stop in-flight soup requests */
 
     /* Persistent settings */
     GKeyFile *keyfile;
