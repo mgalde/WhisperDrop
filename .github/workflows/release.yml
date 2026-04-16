@@ -100,24 +100,17 @@ jobs:
           [ -d /mingw64/share/icons/hicolor ]  && cp -r /mingw64/share/icons/hicolor "$OUT/share/icons/" || true
           [ -d /mingw64/lib/gdk-pixbuf-2.0 ]  && cp -r /mingw64/lib/gdk-pixbuf-2.0  "$OUT/lib/"   || true
 
-          # Standalone exe files (no bundled DLLs — for users with MSYS2 already installed)
-          cp "$OUT/WhisperDrop.exe"           "WhisperDrop-${TAG}-windows-x86_64.exe"
-          cp "$OUT/WhisperDrop-Installer.exe" "WhisperDrop-Installer-${TAG}-windows-x86_64.exe"
-
       - name: Package bundle zip
         shell: pwsh
         run: |
           $tag = $env:GITHUB_REF_NAME
           Compress-Archive -Path "WhisperDrop-windows-bundle\*" `
-                           -DestinationPath "WhisperDrop-${tag}-windows-x86_64-bundle.zip"
+                           -DestinationPath "WhisperDrop-Installer-${tag}-windows-x86_64.zip"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            WhisperDrop-*-windows-x86_64.exe
-            WhisperDrop-Installer-*-windows-x86_64.exe
-            WhisperDrop-*-windows-x86_64-bundle.zip
+          files: WhisperDrop-Installer-*-windows-x86_64.zip
 
   build-macos:
     runs-on: macos-latest
