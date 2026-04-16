@@ -42,8 +42,5 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            WhisperDrop-*-linux-x86_64
-            WhisperDrop-Installer-*-linux-x86_64
-            WhisperDrop-Uninstaller-*-linux-x86_64
+          files: WhisperDrop-*-linux-x86_64
           generate_release_notes: true
