@@ -74,40 +74,46 @@ jobs:
       - name: Build
         run: ninja -C build
 
-      - name: Bundle DLLs and package
+      - name: Bundle DLLs
         run: |
+          set -euo pipefail
           TAG=${GITHUB_REF_NAME}
           MINGW=/mingw64/bin
           OUT=WhisperDrop-windows-bundle
-          mkdir -p "$OUT"
+          mkdir -p "$OUT" "$OUT/share" "$OUT/lib" "$OUT/share/icons"
 
           cp build/WhisperDrop.exe                     "$OUT/WhisperDrop.exe"
           cp build/installer/whisperdrop-installer.exe "$OUT/WhisperDrop-Installer.exe"
 
-          # Copy every mingw64 DLL each binary depends on (recursive via ldd)
+          # Copy every mingw64 DLL each binary depends on
+          # ldd output: "libfoo.dll => /mingw64/bin/libfoo.dll (0x...)"
           for exe in "$OUT/WhisperDrop.exe" "$OUT/WhisperDrop-Installer.exe"; do
             ldd "$exe" \
-              | grep '/mingw64/bin/' \
-              | awk '{print $1}' \
+              | grep -i '/mingw64/bin/' \
+              | sed 's|.* => \(/mingw64/bin/[^ ]*\).*|\1|' \
               | sort -u \
-              | while read dll; do
-                  [ -f "$MINGW/$dll" ] && cp -n "$MINGW/$dll" "$OUT/$dll"
+              | while IFS= read -r src; do
+                  dll=$(basename "$src")
+                  [ -f "$src" ] && cp -n "$src" "$OUT/$dll" && echo "  + $dll"
                 done
           done
 
-          # Also include the GTK4 share data (icons, themes, schemas)
-          cp -r /mingw64/share/glib-2.0         "$OUT/share/"
-          cp -r /mingw64/share/gtk-4.0          "$OUT/share/" 2>/dev/null || true
-          mkdir -p "$OUT/share/icons"
-          cp -r /mingw64/share/icons/hicolor     "$OUT/share/icons/" 2>/dev/null || true
-          cp -r /mingw64/lib/gdk-pixbuf-2.0      "$OUT/lib/"  2>/dev/null || true
+          # GTK4 runtime data (schemas, icons, pixbuf loaders)
+          [ -d /mingw64/share/glib-2.0 ]      && cp -r /mingw64/share/glib-2.0      "$OUT/share/" || true
+          [ -d /mingw64/share/gtk-4.0 ]       && cp -r /mingw64/share/gtk-4.0       "$OUT/share/" || true
+          [ -d /mingw64/share/icons/hicolor ]  && cp -r /mingw64/share/icons/hicolor "$OUT/share/icons/" || true
+          [ -d /mingw64/lib/gdk-pixbuf-2.0 ]  && cp -r /mingw64/lib/gdk-pixbuf-2.0  "$OUT/lib/"   || true
 
-          # Standalone executables (just the .exe, no bundled DLLs — for MSYS2 users)
+          # Standalone exe files (no bundled DLLs — for users with MSYS2 already installed)
           cp "$OUT/WhisperDrop.exe"           "WhisperDrop-${TAG}-windows-x86_64.exe"
           cp "$OUT/WhisperDrop-Installer.exe" "WhisperDrop-Installer-${TAG}-windows-x86_64.exe"
 
-          # Portable bundle zip (exe + all DLLs + assets)
-          7z a "WhisperDrop-${TAG}-windows-x86_64-bundle.zip" "./$OUT/*"
+      - name: Package bundle zip
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          Compress-Archive -Path "WhisperDrop-windows-bundle\*" `
+                           -DestinationPath "WhisperDrop-${tag}-windows-x86_64-bundle.zip"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
