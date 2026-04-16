@@ -7,7 +7,7 @@
 <p align="center">
   <a href="https://github.com/mgalde/WhisperDrop/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/mgalde/WhisperDrop?style=flat-square"></a>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-blue?style=flat-square">
-  <img alt="Platform" src="https://img.shields.io/badge/platform-Linux-lightgrey?style=flat-square">
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey?style=flat-square">
 </p>
 
 Drag and drop your audio or video files onto WhisperDrop and get a text transcript back — no cloud, no subscription, no command line required.
@@ -31,13 +31,13 @@ Supported file types: MP3, WAV, M4A, FLAC, AAC, OGG, OPUS, WMA, MP4, MKV, MOV, W
 
 ## System requirements
 
-| | Minimum |
-|---|---|
-| **OS** | Any modern Linux desktop (GNOME, KDE, XFCE, …) |
-| **Architecture** | x86_64 |
-| **RAM** | 2 GB (4 GB+ recommended for larger models) |
-| **Disk** | 1 GB free for the `base` model; up to 10 GB for `large-v3` |
-| **Internet** | Required on first use to download the Whisper model weights; not needed after that |
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| **OS** | Any modern desktop (GNOME, KDE, XFCE, …) | Windows 10 or later | macOS 12 (Monterey) or later |
+| **Architecture** | x86_64 | x86_64 | x86_64 / Apple Silicon |
+| **RAM** | 2 GB (4 GB+ recommended for larger models) | 2 GB | 2 GB |
+| **Disk** | 1 GB free for `base`; up to 10 GB for `large-v3` | 1 GB free | 1 GB free |
+| **Internet** | Required on first use to download model weights; not needed after that | Same | Same |
 
 > **Privacy:** Once the model is downloaded, WhisperDrop works completely offline. No audio, text, or telemetry is ever sent anywhere.
 
@@ -45,7 +45,15 @@ Supported file types: MP3, WAV, M4A, FLAC, AAC, OGG, OPUS, WMA, MP4, MKV, MOV, W
 
 ## Installing WhisperDrop
 
-### Option 1 — Graphical Installer (Recommended)
+- [Linux](#linux)
+- [Windows](#windows)
+- [macOS](#macos)
+
+---
+
+### Linux
+
+#### Option 1 — Graphical Installer (Recommended)
 
 The installer checks your system, installs anything that is missing, copies WhisperDrop into place, and adds it to your Applications menu. No terminal required.
 
@@ -68,9 +76,7 @@ WhisperDrop will appear in your Applications menu under Audio & Video.
 > ```
 > Then run the installer again.
 
----
-
-### Option 2 — Pre-built binary
+#### Option 2 — Pre-built binary
 
 If you prefer to manage dependencies yourself, download the standalone binary and run it directly.
 
@@ -116,9 +122,7 @@ The binary links against a small number of standard libraries present on any GTK
 
 On any GNOME or KDE Plasma desktop these are already present.
 
----
-
-### Option 3 — Build from source
+#### Option 3 — Build from source
 
 **1. Install build dependencies**
 
@@ -148,6 +152,83 @@ This produces three executables in `build/`:
 ```bash
 ./build/WhisperDrop
 ```
+
+---
+
+### Windows
+
+> **Pre-built binaries** are available on the [Releases page](https://github.com/mgalde/WhisperDrop/releases/latest).
+> Download **WhisperDrop-Installer-vX.X.X-windows-x86_64.exe** and run it.
+
+**Before running the installer, install these prerequisites:**
+
+**1. Install Python**
+
+Download from [python.org](https://www.python.org/downloads/). During installation, check **"Add Python to PATH"**.
+
+**2. Install FFmpeg**
+
+Using winget (Windows 10 20H2+):
+```powershell
+winget install Gyan.FFmpeg
+```
+Or download from [ffmpeg.org](https://ffmpeg.org/download.html) and add the `bin` folder to your PATH.
+
+**3. Run the installer**
+
+The installer will check that Python and FFmpeg are present, install the Whisper transcription engine via pip, copy WhisperDrop to `%LOCALAPPDATA%\WhisperDrop\`, and add it to your Start Menu.
+
+**Build from source (MSYS2)**
+
+```bash
+# In an MSYS2 MinGW-w64 shell:
+pacman -S mingw-w64-x86_64-gtk4 mingw-w64-x86_64-libsoup3 \
+          mingw-w64-x86_64-json-glib mingw-w64-x86_64-meson \
+          mingw-w64-x86_64-ninja mingw-w64-x86_64-gcc
+
+git clone -b windows https://github.com/mgalde/WhisperDrop.git
+cd WhisperDrop
+meson setup build
+ninja -C build
+```
+
+> Requires GLib ≥ 2.74. The self-update feature opens the GitHub releases page on Windows rather than replacing the running binary.
+
+---
+
+### macOS
+
+> **Pre-built binaries** are available on the [Releases page](https://github.com/mgalde/WhisperDrop/releases/latest).
+> Download **WhisperDrop-vX.X.X-macos-x86_64**, make it executable, and run it.
+
+**Before running, install dependencies:**
+
+**1. Install Homebrew** (if not already installed)
+
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+**2. Install FFmpeg and Whisper**
+
+```bash
+brew install ffmpeg
+pip install -U openai-whisper
+```
+
+**Build from source (Homebrew)**
+
+```bash
+brew install gtk4 libsoup json-glib meson ninja
+
+git clone -b macos https://github.com/mgalde/WhisperDrop.git
+cd WhisperDrop
+meson setup build
+ninja -C build
+./build/WhisperDrop
+```
+
+> macOS ships a bare binary only — no graphical installer. The binary can be placed anywhere and run directly.
 
 ---
 
@@ -231,14 +312,15 @@ Go to **Help → Check for Updates** in the menu bar. If a newer version is avai
 
 ## Requirements summary
 
-| Requirement | Purpose | Needed for |
-|---|---|---|
-| FFmpeg | Audio decoding | Running WhisperDrop |
-| openai-whisper | Transcription engine | Running WhisperDrop |
-| GTK4 | UI framework | Running WhisperDrop |
-| libsoup3 | HTTPS (update check) | Running WhisperDrop |
-| json-glib | JSON parsing (update check) | Running WhisperDrop |
-| Meson + Ninja + GCC | Build toolchain | Building from source only |
+| Requirement | Purpose | Linux | Windows | macOS |
+|---|---|---|---|---|
+| FFmpeg | Audio decoding | Required | Required | Required |
+| openai-whisper | Transcription engine | Required | Required | Required |
+| Python | Needed to run Whisper | Usually present | Required | Usually present |
+| GTK4 | UI framework | Required | Bundled (MSYS2) | Required (Homebrew) |
+| libsoup3 | HTTPS (update check) | Required | Bundled | Required (Homebrew) |
+| json-glib | JSON parsing (update check) | Required | Bundled | Required (Homebrew) |
+| Meson + Ninja + GCC | Build toolchain | Source builds only | Source builds only | Source builds only |
 
 ---
 
