@@ -7,7 +7,9 @@
 #include <pango/pango.h>
 #include <stdarg.h>
 #include <string.h>
+#ifndef G_OS_WIN32
 #include <unistd.h>
+#endif
 
 /* ==========================================================
    Job helpers
@@ -679,6 +681,7 @@ static gboolean auto_check_update(gpointer data) {
    even if the binary has moved.
    ========================================================== */
 
+#ifndef G_OS_WIN32
 static void setup_desktop_integration(void) {
     /* ---- Extract icon to ~/.local/share/icons/ ---- */
     gchar *icon_dir = g_build_filename(
@@ -752,6 +755,7 @@ static void setup_desktop_integration(void) {
     g_free(hicolor_dir);
     g_free(apps_dir);
 }
+#endif /* !G_OS_WIN32 */
 
 /* ==========================================================
    UI construction  (app_activate)
@@ -762,7 +766,9 @@ void app_activate(GtkApplication *gapp, gpointer user_data) {
 
     /* Install icon + .desktop file so KDE/Wayland can show the window icon.
        Must happen before gtk_window_present so the compositor sees the files. */
+#ifndef G_OS_WIN32
     setup_desktop_integration();
+#endif
 
     /* ---- Actions ---- */
     GSimpleAction *act_about   = g_simple_action_new("about",         NULL);

@@ -120,10 +120,8 @@ jobs:
   build-macos:
     runs-on: macos-latest
     steps:
-      - name: Checkout macos branch
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: macos
 
       - name: Install dependencies
         run: |

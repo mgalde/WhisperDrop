@@ -10,7 +10,13 @@
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <gio/gio.h>
+#ifndef G_OS_WIN32
 #include <unistd.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
+#endif
 
 /* ─── Embedded icon (generated at build time by embed_binary.py) ─────────── */
 
@@ -60,9 +66,22 @@ static const char *PG_TITLE[2] = {
 
 static gchar *get_exe_dir(void)
 {
+#ifdef G_OS_WIN32
+    wchar_t wbuf[4096] = {0};
+    char    buf[4096]  = {0};
+    GetModuleFileNameW(NULL, wbuf, G_N_ELEMENTS(wbuf) - 1);
+    WideCharToMultiByte(CP_UTF8, 0, wbuf, -1, buf, sizeof(buf), NULL, NULL);
+    if (buf[0]) return g_path_get_dirname(buf);
+#elif defined(__APPLE__)
+    char buf[4096];
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) == 0)
+        return g_path_get_dirname(buf);
+#else
     char buf[4096];
     ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (n > 0) { buf[n] = '\0'; return g_path_get_dirname(buf); }
+#endif
     return g_get_current_dir();
 }
 

@@ -370,6 +370,7 @@ static void show_error(GtkWindow *parent, const char *title, const char *body)
     gtk_window_present(GTK_WINDOW(d));
 }
 
+#ifndef G_OS_WIN32
 static void on_manual_response(GtkDialog *d, int r, gpointer ud)
 {
     (void)ud;
@@ -379,7 +380,6 @@ static void on_manual_response(GtkDialog *d, int r, gpointer ud)
     gtk_window_destroy(GTK_WINDOW(d));
 }
 
-#ifndef G_OS_WIN32
 static void show_manual_install(GtkWindow *parent)
 {
     GtkWidget *d = gtk_message_dialog_new(
