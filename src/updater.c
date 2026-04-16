@@ -45,7 +45,7 @@ static void apply_update(AppState *app, const gchar *tmp_path, const gchar *vers
     /* Windows: running .exe files are locked; the installer handles updates.
        This path is never reached (pick_asset_url returns NULL on Windows,
        so is_direct is always FALSE and start_download is never called). */
-    (void)tmp_path; (void)version;
+    (void)app; (void)tmp_path; (void)version;
     g_unlink(tmp_path);
     return;
 #else

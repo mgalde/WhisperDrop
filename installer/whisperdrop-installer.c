@@ -752,7 +752,7 @@ static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
             "Python is required",
             "WhisperDrop needs Python to run the Whisper transcription engine.\n\n"
             "Download and install Python from https://www.python.org/downloads/\n\n"
-            "Make sure to check \xe2\x80\x9cAdd Python to PATH\xe2\x80\x9d during installation, "
+            "Make sure to check \xe2\x80\x9c""Add Python to PATH\xe2\x80\x9d during installation, "
             "then run this installer again.");
         return;
     }
