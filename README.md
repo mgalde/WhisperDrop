@@ -158,7 +158,12 @@ This produces three executables in `build/`:
 ### Windows
 
 > **Pre-built binaries** are available on the [Releases page](https://github.com/mgalde/WhisperDrop/releases/latest).
-> Download **WhisperDrop-Installer-vX.X.X-windows-x86_64.exe** and run it.
+>
+> | Download | When to use |
+> |---|---|
+> | **WhisperDrop-Installer-vX.X.X-windows-x86_64.exe** | Recommended — installs Whisper and adds a Start Menu entry |
+> | **WhisperDrop-vX.X.X-windows-x86_64-bundle.zip** | Portable — extract anywhere, all DLLs included, no install needed |
+> | **WhisperDrop-vX.X.X-windows-x86_64.exe** | For users who already have MSYS2/MinGW64 on their PATH |
 
 **Before running the installer, install these prerequisites:**
 
@@ -186,7 +191,7 @@ pacman -S mingw-w64-x86_64-gtk4 mingw-w64-x86_64-libsoup3 \
           mingw-w64-x86_64-json-glib mingw-w64-x86_64-meson \
           mingw-w64-x86_64-ninja mingw-w64-x86_64-gcc
 
-git clone -b windows https://github.com/mgalde/WhisperDrop.git
+git clone https://github.com/mgalde/WhisperDrop.git
 cd WhisperDrop
 meson setup build
 ninja -C build
@@ -221,7 +226,7 @@ pip install -U openai-whisper
 ```bash
 brew install gtk4 libsoup json-glib meson ninja
 
-git clone -b macos https://github.com/mgalde/WhisperDrop.git
+git clone https://github.com/mgalde/WhisperDrop.git
 cd WhisperDrop
 meson setup build
 ninja -C build
