@@ -1,9 +1,13 @@
 #pragma once
 #include <gtk/gtk.h>
+#include "build-config.h"
 
 /* ---- App metadata ---- */
 #define APP_NAME      "WhisperDrop"
-#define APP_VERSION   "0.7.0"
+#define APP_ID        "com.saguarosec.WhisperDrop"
+#define APP_ICON_NAME APP_ID
+#define APP_DESKTOP_FILE APP_ID ".desktop"
+#define APP_MENU_CATEGORIES "AudioVideo;Audio;"
 #define APP_AUTHOR    "Michael Galde"
 #define APP_EMAIL     "WhisperDrop@saguarosec.com"
 #define APP_WEBSITE   "https://saguarosec.com/"
@@ -43,6 +47,7 @@ struct _AppState {
     GtkWidget *out_folder_entry;   /* GtkEntry */
     GtkWidget *out_folder_btn;     /* GtkButton */
     GtkWidget *extra_args_entry;   /* GtkEntry */
+    GtkWidget *theme_combo;        /* GtkDropDown */
 
     /* File area */
     GtkWidget  *drop_frame;
@@ -90,6 +95,9 @@ struct _AppState {
     /* Persistent settings */
     GKeyFile *keyfile;
     gchar    *settings_path;
+    GtkCssProvider *theme_provider;
+    gboolean system_prefer_dark;
+    gboolean theme_pref_initialized;
 };
 
 /* ---- Job helpers ---- */

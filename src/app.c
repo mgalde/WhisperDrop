@@ -11,6 +11,60 @@
 #include <unistd.h>
 #endif
 
+typedef struct {
+    const gchar *id;
+    const gchar *label;
+    const gchar *css_class;
+} ThemeOption;
+
+static const ThemeOption THEME_OPTIONS[] = {
+    { "system",   "System",   NULL },
+    { "graphite", "Graphite", "theme-graphite" },
+    { "sand",     "Sand",     "theme-sand" },
+    { "forest",   "Forest",   "theme-forest" },
+};
+
+static const guint THEME_COUNT = G_N_ELEMENTS(THEME_OPTIONS);
+
+static guint theme_index_from_id(const gchar *id) {
+    for (guint i = 0; i < THEME_COUNT; i++) {
+        if (g_strcmp0(THEME_OPTIONS[i].id, id) == 0)
+            return i;
+    }
+    return 0;
+}
+
+static const ThemeOption *theme_option_from_index(guint index) {
+    return &THEME_OPTIONS[index < THEME_COUNT ? index : 0];
+}
+
+static void app_apply_theme(AppState *app, const gchar *theme_id) {
+    const ThemeOption *theme = theme_option_from_index(theme_index_from_id(theme_id));
+    GtkSettings *settings = gtk_settings_get_default();
+
+    if (app->window) {
+        for (guint i = 1; i < THEME_COUNT; i++)
+            gtk_widget_remove_css_class(GTK_WIDGET(app->window), THEME_OPTIONS[i].css_class);
+    }
+
+    if (settings) {
+        if (!app->theme_pref_initialized) {
+            g_object_get(settings, "gtk-application-prefer-dark-theme",
+                         &app->system_prefer_dark, NULL);
+            app->theme_pref_initialized = TRUE;
+        }
+        gboolean prefer_dark =
+            g_strcmp0(theme->id, "system") == 0
+                ? app->system_prefer_dark
+                : g_strcmp0(theme->id, "graphite") == 0 ||
+                  g_strcmp0(theme->id, "forest") == 0;
+        g_object_set(settings, "gtk-application-prefer-dark-theme", prefer_dark, NULL);
+    }
+
+    if (app->window && theme->css_class)
+        gtk_widget_add_css_class(GTK_WIDGET(app->window), theme->css_class);
+}
+
 /* ==========================================================
    Job helpers
    ========================================================== */
@@ -69,6 +123,9 @@ AppState *app_state_new(void) {
     app->keyfile        = g_key_file_new();
     app->settings_path  = make_settings_path();
     app->update_cancel  = g_cancellable_new();
+    app->theme_provider = gtk_css_provider_new();
+    gtk_css_provider_load_from_resource(app->theme_provider,
+                                        "/com/saguarosec/whisperdrop/data/whisperdrop.css");
     return app;
 }
 
@@ -79,6 +136,7 @@ void app_state_free(AppState *app) {
     g_key_file_free(app->keyfile);
     g_free(app->settings_path);
     g_object_unref(app->update_cancel);
+    g_object_unref(app->theme_provider);
     g_free(app);
 }
 
@@ -114,6 +172,12 @@ void app_load_settings(AppState *app) {
     /* extra_args */
     gchar *extra = g_key_file_get_string(app->keyfile, "Settings", "extra_args", NULL);
     if (extra) { gtk_editable_set_text(GTK_EDITABLE(app->extra_args_entry), extra); g_free(extra); }
+
+    /* theme */
+    gchar *theme = g_key_file_get_string(app->keyfile, "Settings", "theme", NULL);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(app->theme_combo), theme_index_from_id(theme));
+    app_apply_theme(app, theme);
+    g_free(theme);
 }
 
 void app_save_settings(AppState *app) {
@@ -125,12 +189,15 @@ void app_save_settings(AppState *app) {
     gboolean     same  = gtk_check_button_get_active(GTK_CHECK_BUTTON(app->same_folder_check));
     const gchar *outf  = gtk_editable_get_text(GTK_EDITABLE(app->out_folder_entry));
     const gchar *extra = gtk_editable_get_text(GTK_EDITABLE(app->extra_args_entry));
+    guint        theme_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(app->theme_combo));
+    const ThemeOption *theme = theme_option_from_index(theme_idx);
 
     g_key_file_set_string (app->keyfile, "Settings", "model",       model ? model : "turbo");
     g_key_file_set_string (app->keyfile, "Settings", "format",      fmt   ? fmt   : "txt");
     g_key_file_set_boolean(app->keyfile, "Settings", "same_folder", same);
     g_key_file_set_string (app->keyfile, "Settings", "out_folder",  outf  ? outf  : "");
     g_key_file_set_string (app->keyfile, "Settings", "extra_args",  extra ? extra : "");
+    g_key_file_set_string (app->keyfile, "Settings", "theme",       theme->id);
 
     g_key_file_save_to_file(app->keyfile, app->settings_path, NULL);
     g_free(fmt);
@@ -671,6 +738,43 @@ static gboolean auto_check_update(gpointer data) {
     return G_SOURCE_REMOVE;
 }
 
+static void on_theme_selected(GObject *obj, GParamSpec *pspec, gpointer data) {
+    (void)obj;
+    (void)pspec;
+    AppState *app = data;
+    guint selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(app->theme_combo));
+    app_apply_theme(app, theme_option_from_index(selected)->id);
+}
+
+static void cleanup_legacy_desktop_files(void) {
+    const gchar *legacy_desktop[] = {
+        "WhisperDrop.desktop",
+        "whisperdrop.desktop",
+        NULL
+    };
+    const gchar *legacy_icons[] = {
+        "WhisperDrop.png",
+        "whisperdrop.png",
+        NULL
+    };
+
+    gchar *apps_dir = g_build_filename(g_get_user_data_dir(), "applications", NULL);
+    for (guint i = 0; legacy_desktop[i]; i++) {
+        gchar *path = g_build_filename(apps_dir, legacy_desktop[i], NULL);
+        g_unlink(path);
+        g_free(path);
+    }
+    g_free(apps_dir);
+
+    gchar *root_icon_dir = g_build_filename(g_get_user_data_dir(), "icons", NULL);
+    for (guint i = 0; legacy_icons[i]; i++) {
+        gchar *path = g_build_filename(root_icon_dir, legacy_icons[i], NULL);
+        g_unlink(path);
+        g_free(path);
+    }
+    g_free(root_icon_dir);
+}
+
 /* ==========================================================
    Desktop integration  (icon + .desktop file for KDE/Wayland)
 
@@ -683,13 +787,15 @@ static gboolean auto_check_update(gpointer data) {
 
 #ifndef G_OS_WIN32
 static void setup_desktop_integration(void) {
+    cleanup_legacy_desktop_files();
+
     /* ---- Extract icon to ~/.local/share/icons/ ---- */
     gchar *icon_dir = g_build_filename(
         g_get_user_data_dir(), "icons", "hicolor", "256x256", "apps", NULL);
     g_mkdir_with_parents(icon_dir, 0755);
 
     gchar *icon_dest = g_build_filename(
-        icon_dir, "com.saguarosec.WhisperDrop.png", NULL);
+        icon_dir, APP_ICON_NAME ".png", NULL);
 
     if (!g_file_test(icon_dest, G_FILE_TEST_EXISTS)) {
         GBytes *data = g_resources_lookup_data(
@@ -714,18 +820,20 @@ static void setup_desktop_integration(void) {
     g_mkdir_with_parents(apps_dir, 0755);
 
     gchar *desktop_dest = g_build_filename(
-        apps_dir, "com.saguarosec.WhisperDrop.desktop", NULL);
+        apps_dir, APP_DESKTOP_FILE, NULL);
 
     gchar *contents = g_strdup_printf(
         "[Desktop Entry]\n"
         "Name=WhisperDrop\n"
         "Comment=Drag-and-drop audio transcription with Whisper\n"
         "Exec=%s\n"
-        "Icon=com.saguarosec.WhisperDrop\n"
+        "Icon=%s\n"
         "Type=Application\n"
-        "Categories=AudioVideo;Audio;\n"
-        "StartupWMClass=WhisperDrop\n",
-        exe_buf);
+        "Categories=%s\n"
+        "Keywords=AI;Whisper;Audio;Transcription;Notes;\n"
+        "StartupWMClass=%s\n"
+        "StartupNotify=true\n",
+        exe_buf, APP_ICON_NAME, APP_MENU_CATEGORIES, APP_ID);
 
     g_file_set_contents(desktop_dest, contents, -1, NULL);
     g_free(contents);
@@ -796,9 +904,13 @@ void app_activate(GtkApplication *gapp, gpointer user_data) {
     gtk_application_window_set_show_menubar(GTK_APPLICATION_WINDOW(window), TRUE);
 
     /* Register bundled PNG with the icon theme so the window/taskbar icon works */
-    GtkIconTheme *icon_theme = gtk_icon_theme_get_for_display(gdk_display_get_default());
+    GdkDisplay *display = gdk_display_get_default();
+    gtk_style_context_add_provider_for_display(display,
+        GTK_STYLE_PROVIDER(app->theme_provider),
+        GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    GtkIconTheme *icon_theme = gtk_icon_theme_get_for_display(display);
     gtk_icon_theme_add_resource_path(icon_theme, "/com/saguarosec/whisperdrop/icons");
-    gtk_window_set_icon_name(GTK_WINDOW(window), "com.saguarosec.WhisperDrop");
+    gtk_window_set_icon_name(GTK_WINDOW(window), APP_ICON_NAME);
     g_signal_connect(window, "close-request", G_CALLBACK(on_close_request), app);
 
     /* ---- Root VBox ---- */
@@ -823,6 +935,14 @@ void app_activate(GtkApplication *gapp, gpointer user_data) {
         gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(app->model_combo), models[i], models[i]);
     gtk_widget_set_hexpand(app->model_combo, TRUE);
     gtk_box_append(GTK_BOX(top), app->model_combo);
+
+    gtk_box_append(GTK_BOX(top), gtk_label_new("Theme:"));
+    app->theme_combo = gtk_drop_down_new_from_strings((const char * const[]) {
+        "System", "Graphite", "Sand", "Forest", NULL
+    });
+    g_signal_connect(app->theme_combo, "notify::selected",
+                     G_CALLBACK(on_theme_selected), app);
+    gtk_box_append(GTK_BOX(top), app->theme_combo);
 
     gtk_box_append(GTK_BOX(top), gtk_label_new("Output:"));
     app->format_combo = gtk_combo_box_text_new();

@@ -24,6 +24,7 @@ WhisperDrop is a graphical front-end for [OpenAI Whisper](https://github.com/ope
 - **Save anywhere** — next to the original file or in a folder of your choice
 - **Watch live** — real-time transcription log shows progress as it runs
 - **Stay up to date** — built-in update check via Help → Check for Updates
+- **Make it yours** — built-in System, Graphite, Sand, and Forest themes
 
 Supported file types: MP3, WAV, M4A, FLAC, AAC, OGG, OPUS, WMA, MP4, MKV, MOV, WEBM, and most other formats FFmpeg can read.
 
@@ -66,7 +67,7 @@ The installer checks your system, installs anything that is missing, copies Whis
 3. Follow the on-screen steps — you may be asked for your password once to install system packages
 4. Click **Launch WhisperDrop** when the installer finishes
 
-WhisperDrop will appear in your Applications menu under Audio & Video.
+WhisperDrop will appear once in your Applications menu under Audio & Video.
 
 > **Removing WhisperDrop:** Download **WhisperDrop-Uninstaller-vX.X.X-linux-x86_64** from the same release and run it. It will remove the application, shortcut, and icon. You can optionally remove saved settings too.
 

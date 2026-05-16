@@ -1,5 +1,5 @@
 project('whisperdrop', 'c',
-  version : '0.7.0',
+  version : '0.7.2',
   default_options : [
     'warning_level=2',
     'c_std=gnu11',
@@ -10,6 +10,14 @@ soup_dep = dependency('libsoup-3.0')
 json_dep = dependency('json-glib-1.0')
 
 gnome = import('gnome')
+
+app_conf = configuration_data()
+app_conf.set('APP_VERSION', meson.project_version())
+
+configure_file(
+  input : 'src/build-config.h.in',
+  output : 'build-config.h',
+  configuration : app_conf)
 
 resources = gnome.compile_resources(
   'whisperdrop-resources',

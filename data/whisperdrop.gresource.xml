@@ -3,6 +3,7 @@
   <!-- Used by gdk_texture_new_from_resource() in the About dialog -->
   <gresource prefix="/com/saguarosec/whisperdrop">
     <file>WhisperDrop.png</file>
+    <file>data/whisperdrop.css</file>
   </gresource>
 
   <!-- Registers the icon with GTK's icon theme so

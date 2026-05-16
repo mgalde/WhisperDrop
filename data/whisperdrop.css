@@ -1,0 +1,107 @@
+.theme-graphite {
+  color-scheme: dark;
+}
+
+.theme-graphite window,
+.theme-graphite textview,
+.theme-graphite text,
+.theme-graphite entry,
+.theme-graphite box,
+.theme-graphite frame,
+.theme-graphite scrolledwindow,
+.theme-graphite list,
+.theme-graphite popover,
+.theme-graphite menu,
+.theme-graphite menubar {
+  background: #14181d;
+  color: #edf2f7;
+}
+
+.theme-graphite button,
+.theme-graphite combobox,
+.theme-graphite dropdown,
+.theme-graphite entry {
+  background: #232a33;
+  color: #edf2f7;
+  border-radius: 8px;
+}
+
+.theme-graphite progressbar trough {
+  background: #232a33;
+}
+
+.theme-graphite progressbar progress {
+  background: #4db6ac;
+}
+
+.theme-sand {
+  color-scheme: light;
+}
+
+.theme-sand window,
+.theme-sand textview,
+.theme-sand text,
+.theme-sand entry,
+.theme-sand box,
+.theme-sand frame,
+.theme-sand scrolledwindow,
+.theme-sand list,
+.theme-sand popover,
+.theme-sand menu,
+.theme-sand menubar {
+  background: #f6efe2;
+  color: #3d2f21;
+}
+
+.theme-sand button,
+.theme-sand combobox,
+.theme-sand dropdown,
+.theme-sand entry {
+  background: #fffaf0;
+  color: #3d2f21;
+  border-radius: 8px;
+}
+
+.theme-sand progressbar trough {
+  background: #e5d6ba;
+}
+
+.theme-sand progressbar progress {
+  background: #bf7b30;
+}
+
+.theme-forest {
+  color-scheme: dark;
+}
+
+.theme-forest window,
+.theme-forest textview,
+.theme-forest text,
+.theme-forest entry,
+.theme-forest box,
+.theme-forest frame,
+.theme-forest scrolledwindow,
+.theme-forest list,
+.theme-forest popover,
+.theme-forest menu,
+.theme-forest menubar {
+  background: #112018;
+  color: #edf7ef;
+}
+
+.theme-forest button,
+.theme-forest combobox,
+.theme-forest dropdown,
+.theme-forest entry {
+  background: #1d3428;
+  color: #edf7ef;
+  border-radius: 8px;
+}
+
+.theme-forest progressbar trough {
+  background: #1d3428;
+}
+
+.theme-forest progressbar progress {
+  background: #7cc576;
+}

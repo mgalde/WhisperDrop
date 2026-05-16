@@ -3,7 +3,7 @@
 
 int main(int argc, char *argv[]) {
     GtkApplication *gapp = gtk_application_new(
-        "com.saguarosec.WhisperDrop",
+        APP_ID,
         G_APPLICATION_DEFAULT_FLAGS);
 
     AppState *app = app_state_new();

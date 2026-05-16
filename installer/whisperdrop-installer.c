@@ -33,6 +33,10 @@ extern const size_t        whisperdrop_icon_len;
 
 #define WIN_W  620
 #define WIN_H  480
+#define APP_ID "com.saguarosec.WhisperDrop"
+#define APP_DESKTOP_FILE APP_ID ".desktop"
+#define APP_ICON_NAME APP_ID
+#define APP_MENU_CATEGORIES "AudioVideo;Audio;"
 
 typedef enum { DEP_PENDING = 0, DEP_OK, DEP_MISSING } DepSt;
 
@@ -290,9 +294,14 @@ static gchar *find_icon(const gchar *dir)
         if (g_file_test(p, G_FILE_TEST_EXISTS)) return p;
         g_free(p);
     }
-    /* Already installed in the user's icon directory */
     gchar *p = g_build_filename(g_get_home_dir(), ".local", "share",
-                                "icons", "WhisperDrop.png", NULL);
+                                "icons", "hicolor", "256x256", "apps",
+                                APP_ICON_NAME ".png", NULL);
+    if (g_file_test(p, G_FILE_TEST_EXISTS)) return p;
+    g_free(p);
+    /* Already installed in the user's icon directory */
+    p = g_build_filename(g_get_home_dir(), ".local", "share",
+                         "icons", "WhisperDrop.png", NULL);
     if (g_file_test(p, G_FILE_TEST_EXISTS)) return p;
     g_free(p);
     return NULL;
@@ -951,6 +960,7 @@ static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
     const char *ico_paths[] = {
         ".local/share/icons/WhisperDrop.png",
         ".local/share/icons/whisperdrop.png",
+        ".local/share/icons/hicolor/256x256/apps/com.saguarosec.WhisperDrop.png",
         NULL
     };
     for (int i = 0; ico_paths[i]; i++) {
@@ -1140,9 +1150,9 @@ static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
     /* ── Step 4: Application icon ────────────────────────────────────── */
 
     gchar *icons_dir = g_build_filename(g_get_home_dir(), ".local",
-                                        "share", "icons", NULL);
+                                        "share", "icons", "hicolor", "256x256", "apps", NULL);
     g_mkdir_with_parents(icons_dir, 0755);
-    gchar *dest_ico = g_build_filename(icons_dir, "WhisperDrop.png", NULL);
+    gchar *dest_ico = g_build_filename(icons_dir, APP_ICON_NAME ".png", NULL);
     g_free(icons_dir);
 
     if (s->src_ico) {
@@ -1169,22 +1179,22 @@ static void install_thread_fn(GTask *task, gpointer src_obj, gpointer td,
     g_mkdir_with_parents(apps_dir, 0755);
 
     gchar *local_bin = g_build_filename(g_get_home_dir(), ".local", "bin", NULL);
-    gchar *local_ico = g_build_filename(g_get_home_dir(), ".local",
-                                        "share", "icons", NULL);
     gchar *desktop = g_strdup_printf(
         "[Desktop Entry]\n"
         "Name=WhisperDrop\n"
         "Comment=Drag and drop audio or video files to get text transcripts\n"
         "Exec=%s/WhisperDrop\n"
-        "Icon=%s/WhisperDrop\n"
+        "Icon=%s\n"
         "Type=Application\n"
-        "Categories=AudioVideo;Utility;\n"
+        "Categories=%s\n"
+        "Keywords=AI;Whisper;Audio;Transcription;Notes;\n"
+        "StartupWMClass=%s\n"
+        "StartupNotify=true\n"
         "Terminal=false\n",
-        local_bin, local_ico);
+        local_bin, APP_ICON_NAME, APP_MENU_CATEGORIES, APP_ID);
     g_free(local_bin);
-    g_free(local_ico);
 
-    gchar *dt_path = g_build_filename(apps_dir, "WhisperDrop.desktop", NULL);
+    gchar *dt_path = g_build_filename(apps_dir, APP_DESKTOP_FILE, NULL);
     g_free(apps_dir);
 
     if (!g_file_set_contents(dt_path, desktop, -1, &err)) {

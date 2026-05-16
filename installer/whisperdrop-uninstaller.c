@@ -29,6 +29,9 @@ extern const size_t        whisperdrop_icon_len;
 
 #define WIN_W 520
 #define WIN_H 380
+#define APP_ID "com.saguarosec.WhisperDrop"
+#define APP_DESKTOP_FILE APP_ID ".desktop"
+#define APP_ICON_NAME APP_ID
 
 /* ─── Forward declarations ───────────────────────────────────────────────── */
 
@@ -103,7 +106,12 @@ static gchar *find_icon(const gchar *dir)
         g_free(p);
     }
     gchar *p = g_build_filename(g_get_home_dir(), ".local", "share",
-                                "icons", "WhisperDrop.png", NULL);
+                                "icons", "hicolor", "256x256", "apps",
+                                APP_ICON_NAME ".png", NULL);
+    if (g_file_test(p, G_FILE_TEST_EXISTS)) return p;
+    g_free(p);
+    p = g_build_filename(g_get_home_dir(), ".local", "share",
+                         "icons", "WhisperDrop.png", NULL);
     if (g_file_test(p, G_FILE_TEST_EXISTS)) return p;
     g_free(p);
     return NULL;
@@ -264,13 +272,21 @@ static void uninstall_thread_fn(GTask *task, gpointer src_obj, gpointer td,
     g_free(bin);
     step++;
 
-    /* 2. .desktop shortcut */
-    gchar *dt = g_build_filename(g_get_home_dir(), ".local", "share",
-                                 "applications", "WhisperDrop.desktop", NULL);
+    /* 2. .desktop shortcut(s) */
+    const gchar *desktop_names[] = {
+        APP_DESKTOP_FILE,
+        "WhisperDrop.desktop",
+        "whisperdrop.desktop",
+        NULL
+    };
     emit_ulog(s, "Removing application shortcut\xe2\x80\xa6",
               (double)step / total);
-    remove_path(dt, FALSE);
-    g_free(dt);
+    for (guint i = 0; desktop_names[i]; i++) {
+        gchar *dt = g_build_filename(g_get_home_dir(), ".local", "share",
+                                     "applications", desktop_names[i], NULL);
+        remove_path(dt, FALSE);
+        g_free(dt);
+    }
     step++;
 
     /* Refresh the application database */
@@ -281,13 +297,20 @@ static void uninstall_thread_fn(GTask *task, gpointer src_obj, gpointer td,
     g_spawn_command_line_async(upd, NULL);
     g_free(upd);
 
-    /* 3. Application icon */
-    gchar *ico = g_build_filename(g_get_home_dir(), ".local", "share",
-                                  "icons", "WhisperDrop.png", NULL);
+    /* 3. Application icon(s) */
+    const gchar *icon_paths[] = {
+        ".local/share/icons/hicolor/256x256/apps/" APP_ICON_NAME ".png",
+        ".local/share/icons/WhisperDrop.png",
+        ".local/share/icons/whisperdrop.png",
+        NULL
+    };
     emit_ulog(s, "Removing application icon\xe2\x80\xa6",
               (double)step / total);
-    remove_path(ico, FALSE);
-    g_free(ico);
+    for (guint i = 0; icon_paths[i]; i++) {
+        gchar *ico = g_build_filename(g_get_home_dir(), icon_paths[i], NULL);
+        remove_path(ico, FALSE);
+        g_free(ico);
+    }
     step++;
 
     /* 4 & 5. Saved settings and data (optional) */
@@ -343,9 +366,9 @@ static GtkWidget *build_confirm(Uninst *s)
         "  \xe2\x80\xa2  WhisperDrop application  "
               "(~/.local/bin/WhisperDrop)\n"
         "  \xe2\x80\xa2  Applications menu shortcut  "
-              "(~/.local/share/applications/WhisperDrop.desktop)\n"
+              "(~/.local/share/applications/com.saguarosec.WhisperDrop.desktop)\n"
         "  \xe2\x80\xa2  Application icon  "
-              "(~/.local/share/icons/WhisperDrop.png)");
+              "(~/.local/share/icons/hicolor/256x256/apps/com.saguarosec.WhisperDrop.png)");
     gtk_label_set_wrap(GTK_LABEL(info), TRUE);
     gtk_label_set_xalign(GTK_LABEL(info), 0.0f);
     gtk_box_append(GTK_BOX(box), info);
