@@ -41,7 +41,7 @@ struct _AppState {
     GtkApplicationWindow *window;
 
     /* Top controls */
-    GtkWidget *model_combo;        /* GtkComboBoxText (editable) */
+    GtkWidget *model_combo;        /* GtkComboBoxText */
     GtkWidget *format_combo;       /* GtkComboBoxText */
     GtkWidget *same_folder_check;  /* GtkCheckButton */
     GtkWidget *out_folder_entry;   /* GtkEntry */

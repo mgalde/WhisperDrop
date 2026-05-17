@@ -404,8 +404,7 @@ void worker_start(AppState *app) {
     WorkerData *wd = g_new0(WorkerData, 1);
     wd->app = app;
 
-    GtkWidget   *model_entry = gtk_combo_box_get_child(GTK_COMBO_BOX(app->model_combo));
-    wd->model       = g_strdup(gtk_editable_get_text(GTK_EDITABLE(model_entry)));
+    wd->model       = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(app->model_combo));
     wd->out_format  = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(app->format_combo));
     wd->same_folder = gtk_check_button_get_active(GTK_CHECK_BUTTON(app->same_folder_check));
     wd->out_folder  = g_strdup(gtk_editable_get_text(GTK_EDITABLE(app->out_folder_entry)));

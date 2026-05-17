@@ -147,10 +147,10 @@ void app_state_free(AppState *app) {
 void app_load_settings(AppState *app) {
     g_key_file_load_from_file(app->keyfile, app->settings_path, G_KEY_FILE_NONE, NULL);
 
-    /* model — written to the editable entry child of the combo */
+    /* model */
     gchar *model = g_key_file_get_string(app->keyfile, "Settings", "model", NULL);
-    GtkWidget *model_entry = gtk_combo_box_get_child(GTK_COMBO_BOX(app->model_combo));
-    gtk_editable_set_text(GTK_EDITABLE(model_entry), model ? model : "turbo");
+    if (!model || !gtk_combo_box_set_active_id(GTK_COMBO_BOX(app->model_combo), model))
+        gtk_combo_box_set_active_id(GTK_COMBO_BOX(app->model_combo), "turbo");
     g_free(model);
 
     /* format */
@@ -183,8 +183,7 @@ void app_load_settings(AppState *app) {
 void app_save_settings(AppState *app) {
     if (!app->model_combo) return;  /* called before UI exists */
 
-    GtkWidget  *model_entry = gtk_combo_box_get_child(GTK_COMBO_BOX(app->model_combo));
-    const gchar *model = gtk_editable_get_text(GTK_EDITABLE(model_entry));
+    gchar       *model = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(app->model_combo));
     gchar       *fmt   = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(app->format_combo));
     gboolean     same  = gtk_check_button_get_active(GTK_CHECK_BUTTON(app->same_folder_check));
     const gchar *outf  = gtk_editable_get_text(GTK_EDITABLE(app->out_folder_entry));
@@ -200,6 +199,7 @@ void app_save_settings(AppState *app) {
     g_key_file_set_string (app->keyfile, "Settings", "theme",       theme->id);
 
     g_key_file_save_to_file(app->keyfile, app->settings_path, NULL);
+    g_free(model);
     g_free(fmt);
 }
 
@@ -560,12 +560,13 @@ static void on_start_clicked(GtkButton *btn, gpointer data) {
         return;
     }
 
-    GtkWidget   *model_entry = gtk_combo_box_get_child(GTK_COMBO_BOX(app->model_combo));
-    const gchar *model       = gtk_editable_get_text(GTK_EDITABLE(model_entry));
+    gchar *model = gtk_combo_box_text_get_active_text(GTK_COMBO_BOX_TEXT(app->model_combo));
     if (!model || model[0] == '\0') {
         show_info(app, "Choose a Whisper model (e.g., turbo).");
+        g_free(model);
         return;
     }
+    g_free(model);
 
     gboolean     same = gtk_check_button_get_active(GTK_CHECK_BUTTON(app->same_folder_check));
     const gchar *outf = gtk_editable_get_text(GTK_EDITABLE(app->out_folder_entry));
@@ -913,99 +914,194 @@ void app_activate(GtkApplication *gapp, gpointer user_data) {
     gtk_window_set_icon_name(GTK_WINDOW(window), APP_ICON_NAME);
     g_signal_connect(window, "close-request", G_CALLBACK(on_close_request), app);
 
+    GtkWidget *header = gtk_header_bar_new();
+    gtk_widget_add_css_class(header, "topbar");
+    gtk_header_bar_set_show_title_buttons(GTK_HEADER_BAR(header), TRUE);
+    gtk_header_bar_set_decoration_layout(GTK_HEADER_BAR(header), ":minimize,maximize,close");
+    gtk_window_set_titlebar(GTK_WINDOW(window), header);
+
+    GtkWidget *title_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    GtkWidget *title = gtk_label_new(APP_NAME);
+    GtkWidget *subtitle = gtk_label_new("Drop audio, queue jobs, and transcribe locally");
+    gtk_widget_add_css_class(title, "app-title");
+    gtk_widget_add_css_class(subtitle, "app-subtitle");
+    gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
+    gtk_label_set_xalign(GTK_LABEL(subtitle), 0.0f);
+    gtk_box_append(GTK_BOX(title_box), title);
+    gtk_box_append(GTK_BOX(title_box), subtitle);
+    gtk_header_bar_set_title_widget(GTK_HEADER_BAR(header), title_box);
+
+    app->open_out_btn = gtk_button_new_with_label("Open Output Folder");
+    g_signal_connect(app->open_out_btn, "clicked", G_CALLBACK(on_open_out_clicked), app);
+    gtk_header_bar_pack_start(GTK_HEADER_BAR(header), app->open_out_btn);
+
+    app->stop_btn = gtk_button_new_with_label("Stop");
+    gtk_widget_add_css_class(app->stop_btn, "destructive-action");
+    gtk_widget_set_sensitive(app->stop_btn, FALSE);
+    g_signal_connect(app->stop_btn, "clicked", G_CALLBACK(on_stop_clicked), app);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), app->stop_btn);
+
+    app->start_btn = gtk_button_new_with_label("Start Transcription");
+    gtk_widget_add_css_class(app->start_btn, "suggested-action");
+    g_signal_connect(app->start_btn, "clicked", G_CALLBACK(on_start_clicked), app);
+    gtk_header_bar_pack_end(GTK_HEADER_BAR(header), app->start_btn);
+
     /* ---- Root VBox ---- */
-    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_set_margin_start (root, 8);
-    gtk_widget_set_margin_end   (root, 8);
-    gtk_widget_set_margin_top   (root, 6);
-    gtk_widget_set_margin_bottom(root, 4);
-    gtk_window_set_child(GTK_WINDOW(window), root);
+    GtkWidget *root_scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(root_scroll),
+                                   GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_widget_set_vexpand(root_scroll, TRUE);
+    gtk_window_set_child(GTK_WINDOW(window), root_scroll);
 
-    /* ---- Top controls row ---- */
-    GtkWidget *top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_box_append(GTK_BOX(root), top);
+    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_add_css_class(root, "app-shell");
+    gtk_widget_set_margin_start (root, 16);
+    gtk_widget_set_margin_end   (root, 16);
+    gtk_widget_set_margin_top   (root, 16);
+    gtk_widget_set_margin_bottom(root, 12);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(root_scroll), root);
 
-    gtk_box_append(GTK_BOX(top), gtk_label_new("Model:"));
-    app->model_combo = gtk_combo_box_text_new_with_entry();
+    GtkWidget *main_area = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 14);
+    gtk_widget_set_vexpand(main_area, TRUE);
+    gtk_box_append(GTK_BOX(root), main_area);
+
+    GtkWidget *sidebar = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    gtk_widget_add_css_class(sidebar, "sidebar-column");
+    gtk_widget_set_size_request(sidebar, 360, -1);
+    gtk_box_append(GTK_BOX(main_area), sidebar);
+
+    GtkWidget *settings_frame = gtk_frame_new(NULL);
+    gtk_widget_add_css_class(settings_frame, "panel-card");
+    gtk_widget_add_css_class(settings_frame, "settings-card");
+    gtk_box_append(GTK_BOX(sidebar), settings_frame);
+
+    GtkWidget *settings_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start(settings_box, 16);
+    gtk_widget_set_margin_end(settings_box, 16);
+    gtk_widget_set_margin_top(settings_box, 16);
+    gtk_widget_set_margin_bottom(settings_box, 16);
+    gtk_frame_set_child(GTK_FRAME(settings_frame), settings_box);
+
+    GtkWidget *settings_title = gtk_label_new("Transcription Settings");
+    gtk_widget_add_css_class(settings_title, "section-title");
+    gtk_label_set_xalign(GTK_LABEL(settings_title), 0.0f);
+    gtk_box_append(GTK_BOX(settings_box), settings_title);
+
+    GtkWidget *field = gtk_label_new("Model");
+    gtk_label_set_xalign(GTK_LABEL(field), 0.0f);
+    gtk_box_append(GTK_BOX(settings_box), field);
+    app->model_combo = gtk_combo_box_text_new();
     const gchar *models[] = {
         "turbo","tiny","tiny.en","base","base.en","small","small.en",
         "medium","medium.en","large","large-v2","large-v3", NULL
     };
     for (int i = 0; models[i]; i++)
         gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(app->model_combo), models[i], models[i]);
-    gtk_widget_set_hexpand(app->model_combo, TRUE);
-    gtk_box_append(GTK_BOX(top), app->model_combo);
+    gtk_box_append(GTK_BOX(settings_box), app->model_combo);
 
-    gtk_box_append(GTK_BOX(top), gtk_label_new("Theme:"));
-    app->theme_combo = gtk_drop_down_new_from_strings((const char * const[]) {
-        "System", "Graphite", "Sand", "Forest", NULL
-    });
-    g_signal_connect(app->theme_combo, "notify::selected",
-                     G_CALLBACK(on_theme_selected), app);
-    gtk_box_append(GTK_BOX(top), app->theme_combo);
-
-    gtk_box_append(GTK_BOX(top), gtk_label_new("Output:"));
+    field = gtk_label_new("Output");
+    gtk_label_set_xalign(GTK_LABEL(field), 0.0f);
+    gtk_box_append(GTK_BOX(settings_box), field);
     app->format_combo = gtk_combo_box_text_new();
     const gchar *fmts[] = {"all","txt","srt","vtt","tsv","json", NULL};
     for (int i = 0; fmts[i]; i++)
         gtk_combo_box_text_append(GTK_COMBO_BOX_TEXT(app->format_combo), fmts[i], fmts[i]);
     gtk_combo_box_set_active(GTK_COMBO_BOX(app->format_combo), 1);
-    gtk_box_append(GTK_BOX(top), app->format_combo);
+    gtk_box_append(GTK_BOX(settings_box), app->format_combo);
+
+    field = gtk_label_new("Theme");
+    gtk_label_set_xalign(GTK_LABEL(field), 0.0f);
+    gtk_box_append(GTK_BOX(settings_box), field);
+    app->theme_combo = gtk_drop_down_new_from_strings((const char * const[]) {
+        "System", "Graphite", "Sand", "Forest", NULL
+    });
+    g_signal_connect(app->theme_combo, "notify::selected",
+                     G_CALLBACK(on_theme_selected), app);
+    gtk_box_append(GTK_BOX(settings_box), app->theme_combo);
 
     app->same_folder_check = gtk_check_button_new_with_label("Save next to input file");
     gtk_check_button_set_active(GTK_CHECK_BUTTON(app->same_folder_check), TRUE);
     g_signal_connect(app->same_folder_check, "toggled", G_CALLBACK(on_same_folder_toggled), app);
-    gtk_box_append(GTK_BOX(top), app->same_folder_check);
+    gtk_box_append(GTK_BOX(settings_box), app->same_folder_check);
 
+    field = gtk_label_new("Output folder");
+    gtk_label_set_xalign(GTK_LABEL(field), 0.0f);
+    gtk_box_append(GTK_BOX(settings_box), field);
     app->out_folder_entry = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(app->out_folder_entry), "Output folder (optional)");
-    gtk_widget_set_hexpand(app->out_folder_entry, TRUE);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(app->out_folder_entry), "Choose a folder when not saving beside source");
     gtk_widget_set_sensitive(app->out_folder_entry, FALSE);
-    gtk_box_append(GTK_BOX(top), app->out_folder_entry);
+    gtk_box_append(GTK_BOX(settings_box), app->out_folder_entry);
 
     app->out_folder_btn = gtk_button_new_with_label("Choose\u2026");
     gtk_widget_set_sensitive(app->out_folder_btn, FALSE);
     g_signal_connect(app->out_folder_btn, "clicked", G_CALLBACK(on_out_folder_clicked), app);
-    gtk_box_append(GTK_BOX(top), app->out_folder_btn);
+    gtk_box_append(GTK_BOX(settings_box), app->out_folder_btn);
 
-    /* ---- Extra args row ---- */
-    GtkWidget *extra_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_box_append(GTK_BOX(root), extra_row);
-    gtk_box_append(GTK_BOX(extra_row), gtk_label_new("Extra whisper args:"));
+    field = gtk_label_new("Extra whisper args");
+    gtk_label_set_xalign(GTK_LABEL(field), 0.0f);
+    gtk_box_append(GTK_BOX(settings_box), field);
     app->extra_args_entry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(app->extra_args_entry),
         "Optional: e.g., --language en --task transcribe --word_timestamps True");
-    gtk_widget_set_hexpand(app->extra_args_entry, TRUE);
-    gtk_box_append(GTK_BOX(extra_row), app->extra_args_entry);
+    gtk_box_append(GTK_BOX(settings_box), app->extra_args_entry);
 
-    /* ---- Paned main area ---- */
-    GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
-    gtk_widget_set_vexpand(paned, TRUE);
-    gtk_paned_set_position(GTK_PANED(paned), 380);
-    gtk_box_append(GTK_BOX(root), paned);
+    app->drop_frame = gtk_frame_new(NULL);
+    gtk_widget_add_css_class(app->drop_frame, "drop-card");
+    gtk_box_append(GTK_BOX(sidebar), app->drop_frame);
 
-    /* --- Left panel: drop zone + file list --- */
-    GtkWidget *left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_set_margin_end(left, 4);
-    gtk_paned_set_start_child(GTK_PANED(paned), left);
-    gtk_paned_set_resize_start_child(GTK_PANED(paned), TRUE);
-
-    app->drop_frame = gtk_frame_new("Drop files here");
-    gtk_widget_set_size_request(app->drop_frame, -1, 90);
+    GtkWidget *drop_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_set_margin_start(drop_box, 18);
+    gtk_widget_set_margin_end(drop_box, 18);
+    gtk_widget_set_margin_top(drop_box, 18);
+    gtk_widget_set_margin_bottom(drop_box, 18);
+    GtkWidget *drop_title = gtk_label_new("Drop files to begin");
+    gtk_widget_add_css_class(drop_title, "drop-title");
+    gtk_label_set_xalign(GTK_LABEL(drop_title), 0.0f);
     GtkWidget *drop_label = gtk_label_new(
-        "Drag & drop audio/video files into this box.\n(or use \u201cAdd Files\u2026\u201d)");
-    gtk_label_set_justify(GTK_LABEL(drop_label), GTK_JUSTIFY_CENTER);
-    gtk_frame_set_child(GTK_FRAME(app->drop_frame), drop_label);
+        "Use drag and drop for journals, interviews, or meeting audio.\n"
+        "The queue on the right updates immediately.");
+    gtk_label_set_xalign(GTK_LABEL(drop_label), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(drop_label), TRUE);
+    gtk_box_append(GTK_BOX(drop_box), drop_title);
+    gtk_box_append(GTK_BOX(drop_box), drop_label);
+    gtk_frame_set_child(GTK_FRAME(app->drop_frame), drop_box);
 
     GtkDropTarget *drop_tgt = gtk_drop_target_new(GDK_TYPE_FILE_LIST, GDK_ACTION_COPY);
     g_signal_connect(drop_tgt, "drop", G_CALLBACK(on_drop), app);
     gtk_widget_add_controller(app->drop_frame, GTK_EVENT_CONTROLLER(drop_tgt));
-    gtk_box_append(GTK_BOX(left), app->drop_frame);
 
-    GtkWidget *list_btns = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    gtk_box_append(GTK_BOX(left), list_btns);
+    GtkWidget *workspace = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
+    gtk_widget_add_css_class(workspace, "workspace-column");
+    gtk_widget_set_hexpand(workspace, TRUE);
+    gtk_widget_set_vexpand(workspace, TRUE);
+    gtk_box_append(GTK_BOX(main_area), workspace);
+
+    GtkWidget *queue_frame = gtk_frame_new(NULL);
+    gtk_widget_add_css_class(queue_frame, "panel-card");
+    gtk_widget_add_css_class(queue_frame, "queue-card");
+    gtk_widget_set_vexpand(queue_frame, TRUE);
+    gtk_box_append(GTK_BOX(workspace), queue_frame);
+
+    GtkWidget *queue_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start(queue_box, 16);
+    gtk_widget_set_margin_end(queue_box, 16);
+    gtk_widget_set_margin_top(queue_box, 16);
+    gtk_widget_set_margin_bottom(queue_box, 16);
+    gtk_frame_set_child(GTK_FRAME(queue_frame), queue_box);
+
+    GtkWidget *queue_header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_box_append(GTK_BOX(queue_box), queue_header);
+    GtkWidget *queue_title = gtk_label_new("Queued Files");
+    gtk_widget_add_css_class(queue_title, "section-title");
+    gtk_label_set_xalign(GTK_LABEL(queue_title), 0.0f);
+    gtk_widget_set_hexpand(queue_title, TRUE);
+    gtk_box_append(GTK_BOX(queue_header), queue_title);
+
+    GtkWidget *list_btns = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_box_append(GTK_BOX(queue_header), list_btns);
 
     app->add_btn = gtk_button_new_with_label("Add Files\u2026");
+    gtk_widget_add_css_class(app->add_btn, "suggested-action");
     g_signal_connect(app->add_btn, "clicked", G_CALLBACK(on_add_files_clicked), app);
     gtk_box_append(GTK_BOX(list_btns), app->add_btn);
 
@@ -1021,43 +1117,40 @@ void app_activate(GtkApplication *gapp, gpointer user_data) {
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(list_scroll),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     gtk_widget_set_vexpand(list_scroll, TRUE);
-    gtk_box_append(GTK_BOX(left), list_scroll);
+    gtk_box_append(GTK_BOX(queue_box), list_scroll);
 
     app->file_list = GTK_LIST_BOX(gtk_list_box_new());
+    gtk_widget_add_css_class(GTK_WIDGET(app->file_list), "queue-list");
     gtk_list_box_set_selection_mode(app->file_list, GTK_SELECTION_MULTIPLE);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(list_scroll),
                                   GTK_WIDGET(app->file_list));
 
-    /* --- Right panel: run controls + log --- */
-    GtkWidget *right = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_set_margin_start(right, 4);
-    gtk_paned_set_end_child(GTK_PANED(paned), right);
-    gtk_paned_set_resize_end_child(GTK_PANED(paned), TRUE);
+    GtkWidget *activity_frame = gtk_frame_new(NULL);
+    gtk_widget_add_css_class(activity_frame, "panel-card");
+    gtk_widget_add_css_class(activity_frame, "activity-card");
+    gtk_widget_set_vexpand(activity_frame, TRUE);
+    gtk_box_append(GTK_BOX(workspace), activity_frame);
 
-    GtkWidget *run_btns = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    gtk_box_append(GTK_BOX(right), run_btns);
+    GtkWidget *activity_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
+    gtk_widget_set_margin_start(activity_box, 16);
+    gtk_widget_set_margin_end(activity_box, 16);
+    gtk_widget_set_margin_top(activity_box, 16);
+    gtk_widget_set_margin_bottom(activity_box, 16);
+    gtk_frame_set_child(GTK_FRAME(activity_frame), activity_box);
 
-    app->start_btn = gtk_button_new_with_label("Start");
-    g_signal_connect(app->start_btn, "clicked", G_CALLBACK(on_start_clicked), app);
-    gtk_box_append(GTK_BOX(run_btns), app->start_btn);
-
-    app->stop_btn = gtk_button_new_with_label("Stop");
-    gtk_widget_set_sensitive(app->stop_btn, FALSE);
-    g_signal_connect(app->stop_btn, "clicked", G_CALLBACK(on_stop_clicked), app);
-    gtk_box_append(GTK_BOX(run_btns), app->stop_btn);
-
-    app->open_out_btn = gtk_button_new_with_label("Open Output Folder");
-    g_signal_connect(app->open_out_btn, "clicked", G_CALLBACK(on_open_out_clicked), app);
-    gtk_box_append(GTK_BOX(run_btns), app->open_out_btn);
+    GtkWidget *activity_title = gtk_label_new("Live Activity");
+    gtk_widget_add_css_class(activity_title, "section-title");
+    gtk_label_set_xalign(GTK_LABEL(activity_title), 0.0f);
+    gtk_box_append(GTK_BOX(activity_box), activity_title);
 
     app->progress = GTK_PROGRESS_BAR(gtk_progress_bar_new());
-    gtk_box_append(GTK_BOX(right), GTK_WIDGET(app->progress));
+    gtk_box_append(GTK_BOX(activity_box), GTK_WIDGET(app->progress));
 
     GtkWidget *log_scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(log_scroll),
                                    GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
     gtk_widget_set_vexpand(log_scroll, TRUE);
-    gtk_box_append(GTK_BOX(right), log_scroll);
+    gtk_box_append(GTK_BOX(activity_box), log_scroll);
 
     app->log_view = gtk_text_view_new();
     app->log_buf  = gtk_text_view_get_buffer(GTK_TEXT_VIEW(app->log_view));
@@ -1070,7 +1163,7 @@ void app_activate(GtkApplication *gapp, gpointer user_data) {
     /* ---- Status label ---- */
     app->status_label = gtk_label_new("Ready");
     gtk_label_set_xalign(GTK_LABEL(app->status_label), 0.0f);
-    gtk_widget_set_margin_top(app->status_label, 2);
+    gtk_widget_add_css_class(app->status_label, "status-pill");
     gtk_box_append(GTK_BOX(root), app->status_label);
 
     /* ---- Load settings and show ---- */

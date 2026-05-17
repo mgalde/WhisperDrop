@@ -1,107 +1,414 @@
-.theme-graphite {
-  color-scheme: dark;
+.app-shell {
+  border-spacing: 14px;
 }
 
-.theme-graphite window,
-.theme-graphite textview,
-.theme-graphite text,
-.theme-graphite entry,
-.theme-graphite box,
-.theme-graphite frame,
-.theme-graphite scrolledwindow,
-.theme-graphite list,
-.theme-graphite popover,
-.theme-graphite menu,
-.theme-graphite menubar {
-  background: #14181d;
-  color: #edf2f7;
+.topbar {
+  padding: 8px 12px;
+  border-bottom: 1px solid alpha(currentColor, 0.1);
 }
 
-.theme-graphite button,
-.theme-graphite combobox,
-.theme-graphite dropdown,
-.theme-graphite entry {
-  background: #232a33;
-  color: #edf2f7;
-  border-radius: 8px;
+.app-title {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
-.theme-graphite progressbar trough {
-  background: #232a33;
+.app-subtitle {
+  font-size: 0.88rem;
+  opacity: 0.7;
 }
 
-.theme-graphite progressbar progress {
-  background: #4db6ac;
+.hero-card,
+.panel-card,
+.drop-card,
+.status-pill {
+  border-radius: 18px;
+  border: 1px solid alpha(currentColor, 0.05);
+  box-shadow: 0 8px 18px alpha(black, 0.04);
 }
 
-.theme-sand {
-  color-scheme: light;
+.hero-card {
+  overflow: hidden;
 }
 
-.theme-sand window,
-.theme-sand textview,
-.theme-sand text,
-.theme-sand entry,
-.theme-sand box,
-.theme-sand frame,
-.theme-sand scrolledwindow,
-.theme-sand list,
-.theme-sand popover,
-.theme-sand menu,
-.theme-sand menubar {
-  background: #f6efe2;
-  color: #3d2f21;
+.hero-kicker {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.72;
 }
 
-.theme-sand button,
-.theme-sand combobox,
-.theme-sand dropdown,
-.theme-sand entry {
-  background: #fffaf0;
-  color: #3d2f21;
-  border-radius: 8px;
+.hero-title {
+  font-size: 1.85rem;
+  font-weight: 900;
+  line-height: 1.05;
 }
 
-.theme-sand progressbar trough {
-  background: #e5d6ba;
+.hero-body {
+  font-size: 1rem;
+  opacity: 0.82;
 }
 
-.theme-sand progressbar progress {
-  background: #bf7b30;
+.hero-meta {
+  min-width: 180px;
 }
 
-.theme-forest {
-  color-scheme: dark;
+.meta-pill {
+  padding: 10px 14px;
+  border-radius: 16px;
+  border: 1px solid alpha(currentColor, 0.08);
+  font-weight: 700;
+  line-height: 1.4;
 }
 
-.theme-forest window,
-.theme-forest textview,
-.theme-forest text,
-.theme-forest entry,
-.theme-forest box,
-.theme-forest frame,
-.theme-forest scrolledwindow,
-.theme-forest list,
-.theme-forest popover,
-.theme-forest menu,
-.theme-forest menubar {
-  background: #112018;
-  color: #edf7ef;
+.section-title {
+  font-size: 1.08rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
 }
 
-.theme-forest button,
-.theme-forest combobox,
-.theme-forest dropdown,
-.theme-forest entry {
-  background: #1d3428;
-  color: #edf7ef;
-  border-radius: 8px;
+.sidebar-column {
+  border-radius: 22px;
+  padding: 8px;
 }
 
-.theme-forest progressbar trough {
-  background: #1d3428;
+.workspace-column {
+  border-radius: 22px;
+  padding: 2px;
 }
 
-.theme-forest progressbar progress {
-  background: #7cc576;
+.settings-card,
+.queue-card,
+.activity-card {
+  overflow: hidden;
+}
+
+.drop-card {
+  border-style: dashed;
+  border-width: 1px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.drop-title {
+  font-size: 1.28rem;
+  font-weight: 900;
+}
+
+.status-pill {
+  padding: 12px 16px;
+  font-weight: 700;
+}
+
+.queue-list row {
+  margin: 0 0 8px 0;
+  padding: 6px 8px;
+  border-radius: 12px;
+  border: 1px solid alpha(currentColor, 0.04);
+}
+
+.queue-list row:selected {
+  outline: none;
+}
+
+button {
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+entry,
+combobox,
+dropdown {
+  min-height: 40px;
+  border-radius: 12px;
+  box-shadow: none;
+}
+
+progressbar trough {
+  min-height: 16px;
+  border-radius: 999px;
+}
+
+progressbar progress {
+  border-radius: 999px;
+}
+
+textview {
+  border-radius: 16px;
+}
+
+frame,
+list,
+scrolledwindow,
+textview,
+entry,
+button,
+dropdown,
+combobox {
+  outline: none;
+}
+
+headerbar button.titlebutton {
+  min-height: 28px;
+  min-width: 28px;
+  padding: 0;
+  border-radius: 999px;
+  box-shadow: none;
+  background: transparent;
+  border: none;
+}
+
+headerbar button.image-button.titlebutton,
+headerbar button.titlebutton {
+  min-height: 28px;
+  min-width: 28px;
+}
+
+window.theme-graphite,
+window.theme-graphite textview,
+window.theme-graphite text,
+window.theme-graphite entry,
+window.theme-graphite box,
+window.theme-graphite frame,
+window.theme-graphite scrolledwindow,
+window.theme-graphite list,
+window.theme-graphite popover,
+window.theme-graphite menu,
+window.theme-graphite menubar,
+window.theme-graphite headerbar {
+  background: #0f1419;
+  color: #ecf4ff;
+}
+
+window.theme-graphite .topbar {
+  background: #0b1116;
+}
+
+window.theme-graphite .hero-card {
+  background: linear-gradient(135deg, #0f1720 0%, #173247 58%, #2a7d83 100%);
+}
+
+window.theme-graphite .sidebar-column {
+  background: linear-gradient(180deg, rgba(26, 36, 46, 0.65) 0%, rgba(16, 23, 30, 0.65) 100%);
+}
+
+window.theme-graphite .workspace-column {
+  background: linear-gradient(180deg, rgba(13, 18, 24, 0.45) 0%, rgba(18, 26, 34, 0.45) 100%);
+}
+
+window.theme-graphite .panel-card,
+window.theme-graphite .drop-card,
+window.theme-graphite .status-pill {
+  background: #17212b;
+}
+
+window.theme-graphite .drop-card {
+  background: #111922;
+}
+
+window.theme-graphite .settings-card {
+  background: linear-gradient(180deg, #17212b 0%, #1b2732 100%);
+}
+
+window.theme-graphite .queue-card {
+  background: linear-gradient(180deg, #111922 0%, #15212b 100%);
+}
+
+window.theme-graphite .activity-card {
+  background: linear-gradient(180deg, #131c24 0%, #18252d 100%);
+}
+
+window.theme-graphite .meta-pill,
+window.theme-graphite .queue-list row,
+window.theme-graphite textview {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+window.theme-graphite button,
+window.theme-graphite combobox,
+window.theme-graphite dropdown,
+window.theme-graphite entry {
+  background: #22303c;
+  color: #ecf4ff;
+  border: 1px solid rgba(255, 255, 255, 0.035);
+}
+
+window.theme-graphite headerbar button.titlebutton {
+  background: transparent;
+  border: none;
+}
+
+window.theme-graphite progressbar trough {
+  background: #243341;
+}
+
+window.theme-graphite progressbar progress {
+  background: linear-gradient(90deg, #51d6cb 0%, #74e5b0 100%);
+}
+
+window.theme-sand,
+window.theme-sand textview,
+window.theme-sand text,
+window.theme-sand entry,
+window.theme-sand box,
+window.theme-sand frame,
+window.theme-sand scrolledwindow,
+window.theme-sand list,
+window.theme-sand popover,
+window.theme-sand menu,
+window.theme-sand menubar,
+window.theme-sand headerbar {
+  background: #f4ead9;
+  color: #3a2a1f;
+}
+
+window.theme-sand .topbar {
+  background: #f0e2ca;
+}
+
+window.theme-sand .hero-card {
+  background: linear-gradient(135deg, #fff5e6 0%, #f0cf92 56%, #d97b41 100%);
+}
+
+window.theme-sand .sidebar-column {
+  background: linear-gradient(180deg, rgba(255, 248, 237, 0.58) 0%, rgba(243, 227, 196, 0.58) 100%);
+}
+
+window.theme-sand .workspace-column {
+  background: linear-gradient(180deg, rgba(255, 252, 246, 0.42) 0%, rgba(247, 237, 215, 0.42) 100%);
+}
+
+window.theme-sand .panel-card,
+window.theme-sand .drop-card,
+window.theme-sand .status-pill {
+  background: #fffaf1;
+}
+
+window.theme-sand .drop-card {
+  background: #efe3cb;
+}
+
+window.theme-sand .settings-card {
+  background: linear-gradient(180deg, #fffaf1 0%, #f8ecda 100%);
+}
+
+window.theme-sand .queue-card {
+  background: linear-gradient(180deg, #fffdf7 0%, #f7ecdb 100%);
+}
+
+window.theme-sand .activity-card {
+  background: linear-gradient(180deg, #fff9ef 0%, #f6e6cb 100%);
+}
+
+window.theme-sand .meta-pill,
+window.theme-sand .queue-list row,
+window.theme-sand textview {
+  background: rgba(255, 255, 255, 0.82);
+}
+
+window.theme-sand button,
+window.theme-sand combobox,
+window.theme-sand dropdown,
+window.theme-sand entry {
+  background: #fffdf7;
+  color: #3a2a1f;
+  border: 1px solid rgba(58, 42, 31, 0.035);
+}
+
+window.theme-sand headerbar button.titlebutton {
+  background: transparent;
+  border: none;
+}
+
+window.theme-sand progressbar trough {
+  background: #e5d4b4;
+}
+
+window.theme-sand progressbar progress {
+  background: linear-gradient(90deg, #d67a33 0%, #e1a34a 100%);
+}
+
+window.theme-forest,
+window.theme-forest textview,
+window.theme-forest text,
+window.theme-forest entry,
+window.theme-forest box,
+window.theme-forest frame,
+window.theme-forest scrolledwindow,
+window.theme-forest list,
+window.theme-forest popover,
+window.theme-forest menu,
+window.theme-forest menubar,
+window.theme-forest headerbar {
+  background: #0c1711;
+  color: #eef8ef;
+}
+
+window.theme-forest .topbar {
+  background: #0a130f;
+}
+
+window.theme-forest .hero-card {
+  background: linear-gradient(135deg, #102117 0%, #1f4d31 55%, #6eac4c 100%);
+}
+
+window.theme-forest .sidebar-column {
+  background: linear-gradient(180deg, rgba(20, 43, 28, 0.65) 0%, rgba(12, 26, 18, 0.65) 100%);
+}
+
+window.theme-forest .workspace-column {
+  background: linear-gradient(180deg, rgba(10, 22, 15, 0.45) 0%, rgba(17, 32, 23, 0.45) 100%);
+}
+
+window.theme-forest .panel-card,
+window.theme-forest .drop-card,
+window.theme-forest .status-pill {
+  background: #173122;
+}
+
+window.theme-forest .drop-card {
+  background: #12271b;
+}
+
+window.theme-forest .settings-card {
+  background: linear-gradient(180deg, #173122 0%, #1d3d2a 100%);
+}
+
+window.theme-forest .queue-card {
+  background: linear-gradient(180deg, #13261b 0%, #193024 100%);
+}
+
+window.theme-forest .activity-card {
+  background: linear-gradient(180deg, #14271c 0%, #1a3124 100%);
+}
+
+window.theme-forest .meta-pill,
+window.theme-forest .queue-list row,
+window.theme-forest textview {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+window.theme-forest button,
+window.theme-forest combobox,
+window.theme-forest dropdown,
+window.theme-forest entry {
+  background: #21412d;
+  color: #eef8ef;
+  border: 1px solid rgba(255, 255, 255, 0.035);
+}
+
+window.theme-forest headerbar button.titlebutton {
+  background: transparent;
+  border: none;
+}
+
+window.theme-forest progressbar trough {
+  background: #244632;
+}
+
+window.theme-forest progressbar progress {
+  background: linear-gradient(90deg, #79d06d 0%, #a4e37f 100%);
 }
